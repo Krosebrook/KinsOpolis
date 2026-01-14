@@ -1,0 +1,18 @@
+
+{
+  "name": "Sky Metropolis Builder 3000",
+  "short_name": "SkyMetropolis",
+  "description": "Build your dream city in the clouds with the help of Gemini AI.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#38bdf8",
+  "theme_color": "#38bdf8",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1042/1042263.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

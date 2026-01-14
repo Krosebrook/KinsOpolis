@@ -1,43 +1,52 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { Grid, TileData, BuildingType, CityStats, AIGoal, NewsItem } from './types';
 import { GRID_SIZE, BUILDINGS, TICK_RATE_MS, INITIAL_MONEY } from './constants';
-import IsoMap from './components/IsoMap';
 import UIOverlay from './components/UIOverlay';
 import StartScreen from './components/StartScreen';
 import { generateCityGoal, generateNewsEvent } from './services/geminiService';
 import { loadGame, saveGame } from './services/storage';
 
-// Initialize huge grid
+// Lazy load the heavy 3D component
+const IsoMap = lazy(() => import('./components/IsoMap'));
+
+// Initial huge grid
 const createInitialGrid = (): Grid => {
   const grid: Grid = [];
-  const center = GRID_SIZE / 2;
-  // Large continent shape
-  const noise = (x: number, y: number) => Math.sin(x * 0.15) * Math.cos(y * 0.15) + Math.random() * 0.2;
-
   for (let y = 0; y < GRID_SIZE; y++) {
     const row: TileData[] = [];
     for (let x = 0; x < GRID_SIZE; x++) {
-      const dist = Math.sqrt((x-center)*(x-center) + (y-center)*(y-center));
-      const maxDist = GRID_SIZE / 2 - 2;
-      
-      // Make edges water, keep center mostly land
-      let isLand = dist < maxDist;
-      
-      // Add some noise to edges
-      if (dist > maxDist - 5 && dist < maxDist) {
-        if (noise(x, y) < 0) isLand = false;
-      }
-
       row.push({ x, y, buildingType: BuildingType.None });
     }
     grid.push(row);
   }
   return grid;
 };
+
+// Themed loading fallback
+const LoadingScreen = () => (
+  <div className="absolute inset-0 flex flex-col items-center justify-center bg-sky-400 z-[100]">
+    <div className="flex flex-col items-center animate-pulse">
+      <div className="text-8xl mb-4">🏙️</div>
+      <h2 className="text-3xl font-black text-white uppercase tracking-tighter">
+        Loading Sky Metropolis...
+      </h2>
+      <div className="mt-4 w-48 h-3 bg-white/30 rounded-full overflow-hidden">
+        <div className="h-full bg-yellow-400 animate-[loading_2s_infinite]" style={{ width: '60%' }}></div>
+      </div>
+    </div>
+    <style>{`
+      @keyframes loading {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(200%); }
+      }
+    `}</style>
+  </div>
+);
 
 function App() {
   const [gameStarted, setGameStarted] = useState(false);
@@ -115,7 +124,6 @@ function App() {
     } else {
         if (!currentGoal && aiEnabled) fetchNewGoal();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameStarted]);
 
   useEffect(() => {
@@ -217,7 +225,7 @@ function App() {
   const handleClaimReward = () => {
     if (currentGoal && currentGoal.completed) {
       setCelebrate(true);
-      setTimeout(() => setCelebrate(false), 5000); // 5s confetti
+      setTimeout(() => setCelebrate(false), 5000); 
 
       setStats(prev => ({ ...prev, money: prev.money + currentGoal.reward }));
       addNewsItem({id: Date.now().toString(), text: `Mission Complete! You got $${currentGoal.reward}! 🏆`, type: 'positive'});
@@ -233,13 +241,15 @@ function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden selection:bg-transparent selection:text-transparent bg-sky-400">
-      <IsoMap 
-        grid={grid} 
-        onTileClick={handleTileClick} 
-        hoveredTool={selectedTool}
-        population={stats.population}
-        celebrate={celebrate}
-      />
+      <Suspense fallback={<LoadingScreen />}>
+        <IsoMap 
+          grid={grid} 
+          onTileClick={handleTileClick} 
+          hoveredTool={selectedTool}
+          population={stats.population}
+          celebrate={celebrate}
+        />
+      </Suspense>
       
       {!gameStarted && (
         <StartScreen onStart={handleStart} />
