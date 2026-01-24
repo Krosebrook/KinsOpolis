@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -65,5 +66,26 @@ export const BUILDINGS: Record<BuildingType, BuildingConfig> = {
     color: '#4ade80', // green-400
     popGen: 1,
     incomeGen: 0,
+    range: 5,
+  },
+  [BuildingType.Police]: {
+    type: BuildingType.Police,
+    cost: 500,
+    name: 'Police',
+    description: 'Safety first! 👮',
+    color: '#3b82f6', // blue-500
+    popGen: 0,
+    incomeGen: -10, // Cost to run
+    range: 10,
+  },
+  [BuildingType.School]: {
+    type: BuildingType.School,
+    cost: 800,
+    name: 'School',
+    description: 'Learn stuff! 📚',
+    color: '#a855f7', // purple-500
+    popGen: 2,
+    incomeGen: -20, // Cost to run
+    range: 15,
   },
 };

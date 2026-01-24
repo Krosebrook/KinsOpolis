@@ -1,9 +1,10 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 import { GoogleGenAI, Type } from "@google/genai";
-import { AIGoal, BuildingType, CityStats, Grid, NewsItem } from "../types";
+import { AIGoal, BuildingType, CityStats, Grid, NewsItem, CitizenThought } from "../types";
 import { BUILDINGS } from "../constants";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -120,4 +121,55 @@ export const generateNewsEvent = async (stats: CityStats, recentAction: string |
     console.error("Error generating news:", error);
   }
   return null;
+};
+
+// --- Citizen Thoughts ---
+
+const citizenSchema = {
+    type: Type.OBJECT,
+    properties: {
+        name: { type: Type.STRING, description: "A funny fake name" },
+        job: { type: Type.STRING, description: "A silly job (e.g. 'Cloud Watcher')" },
+        thought: { type: Type.STRING, description: "One sentence observation about their surroundings or the weather." },
+        mood: { type: Type.STRING, enum: ['happy', 'angry', 'neutral'] }
+    },
+    required: ['name', 'job', 'thought', 'mood']
+};
+
+export const generateCitizenThought = async (
+    stats: CityStats, 
+    nearbyBuilding: string, 
+    weather: string, 
+    isNight: boolean
+): Promise<CitizenThought | null> => {
+    const context = `
+        The citizen is walking near a ${nearbyBuilding}.
+        Weather: ${weather}.
+        Time: ${isNight ? 'Night' : 'Day'}.
+        City Population: ${stats.population}.
+        City Money: ${stats.money}.
+    `;
+    
+    const prompt = `Generate a random citizen persona for a city builder game. 
+    They should make a brief, funny comment about their current situation (weather, location, or time).
+    Keep it kid-friendly.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: `${context}\n${prompt}`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: citizenSchema,
+                temperature: 1.0,
+            },
+        });
+
+        if (response.text) {
+            return JSON.parse(response.text) as CitizenThought;
+        }
+    } catch (error) {
+        console.error("Error generating thought:", error);
+    }
+    return null;
 };
