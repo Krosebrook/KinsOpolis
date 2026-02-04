@@ -64,7 +64,7 @@ const RoadDetails = React.memo(({ grid, isNight }: { grid: Grid, isNight: boolea
     if (props.length === 0) return null;
 
     return (
-        <group>
+        <group raycast={() => null}>
             <instancedMesh ref={poleRef} args={[poleGeo, undefined, props.length]} castShadow receiveShadow>
                 <meshStandardMaterial color="#374151" />
             </instancedMesh>
@@ -271,7 +271,12 @@ const IsoMap: React.FC<IsoMapProps> = ({ grid, onTileClick, hoveredTool, populat
           )}
 
           <group raycast={() => null}>
-             <PopulationSystem grid={grid} population={population} onCitizenClick={onCitizenClick} />
+             <PopulationSystem 
+                grid={grid} 
+                population={population} 
+                onCitizenClick={onCitizenClick} 
+                interactionDisabled={hoveredTool !== BuildingType.None}
+             />
 
             {showPreview && hoveredTile && (
               <group position={[previewPos[0], 0, previewPos[2]]}>

@@ -17,13 +17,14 @@ interface Props {
     grid: Grid;
     population: number;
     onCitizenClick: (citizen: Citizen) => void;
+    interactionDisabled?: boolean;
 }
 
 const clothesColors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#ffffff'];
 const WORLD_OFFSET = GRID_SIZE / 2 - 0.5;
 const gridToWorld = (x: number, y: number) => [x - WORLD_OFFSET, 0, y - WORLD_OFFSET] as [number, number, number];
 
-const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick }) => {
+const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, interactionDisabled = false }) => {
     // Limit visible agents for performance
     const agentCount = Math.min(Math.floor(population / 2) + 5, 200); 
     
@@ -200,6 +201,7 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick })
     });
 
     const handleClick = (e: THREE.Event) => {
+        if (interactionDisabled) return; // Let click pass through if disabled
         e.stopPropagation();
         if (e.instanceId !== undefined) {
             const citizen = agentsData.current[e.instanceId];
@@ -208,14 +210,14 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick })
     };
 
     return (
-        <group>
+        <group raycast={interactionDisabled ? () => null : undefined}>
             <instancedMesh 
                 ref={bodyMesh} 
                 args={[bodyGeo, undefined, agentCount]} 
                 castShadow 
                 onClick={handleClick}
-                onPointerOver={() => document.body.style.cursor = 'pointer'}
-                onPointerOut={() => document.body.style.cursor = 'default'}
+                onPointerOver={() => { if (!interactionDisabled) document.body.style.cursor = 'pointer'; }}
+                onPointerOut={() => { document.body.style.cursor = 'default'; }}
             >
                 <meshStandardMaterial roughness={0.8} />
             </instancedMesh>

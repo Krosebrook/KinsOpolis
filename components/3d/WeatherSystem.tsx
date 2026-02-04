@@ -66,7 +66,7 @@ const WeatherSystem: React.FC<WeatherProps> = ({ type }) => {
     if (type === 'sunny') return null;
 
     return (
-        <instancedMesh ref={mesh} args={[undefined, undefined, count]} frustumCulled={false}>
+        <instancedMesh ref={mesh} args={[undefined, undefined, count]} frustumCulled={false} raycast={() => null}>
             {type === 'rain' ? <boxGeometry /> : <sphereGeometry args={[1,4,4]} />}
             <meshBasicMaterial transparent opacity={0.6} />
         </instancedMesh>
