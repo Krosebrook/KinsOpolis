@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useCallback, Suspense, lazy, useEffect } from 'react';
+import React, { useState, useCallback, Suspense, lazy, useEffect, useRef } from 'react';
 import { DecorationType, BuildingType, AppSettings, AIResponse } from './types';
 import { PALETTE } from './constants';
 import UIOverlay from './components/UIOverlay';
@@ -38,6 +38,8 @@ function App() {
   } = useGameState();
 
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [explosions, setExplosions] = useState<{ id: string, x: number, y: number, type: BuildingType }[]>([]);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Tools State
   const [activeCategory, setActiveCategory] = useState<'decoration' | 'building'>('decoration');
@@ -62,15 +64,32 @@ function App() {
     ambience: true
   });
 
-  // Handle Tile Interaction from hook
-  const onTileClick = useCallback((x: number, y: number) => {
-    handleTileClick(x, y, activeCategory, selectedTool, selectedColor);
-  }, [handleTileClick, activeCategory, selectedTool, selectedColor]);
+  // Cleanup on unmount or slot change
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [currentSlotId]);
 
-  // Audio Ambience Management
+  const onTileClick = useCallback((x: number, y: number) => {
+    if (activeCategory === 'building' && selectedTool === BuildingType.None) {
+      const tile = grid[y][x];
+      if (tile.buildingType !== BuildingType.None) {
+        setExplosions(prev => [
+          ...prev, 
+          { id: Math.random().toString(), x, y, type: tile.buildingType }
+        ]);
+      }
+    }
+    handleTileClick(x, y, activeCategory, selectedTool, selectedColor);
+  }, [handleTileClick, activeCategory, selectedTool, selectedColor, grid]);
+
+  const removeExplosion = useCallback((id: string) => {
+    setExplosions(prev => prev.filter(e => e.id !== id));
+  }, []);
+
   useEffect(() => {
       audio.setVolume(settings.volume);
-      
       if (currentSlotId && settings.ambience) {
           audio.startAmbience();
       } else {
@@ -78,234 +97,107 @@ function App() {
       }
   }, [currentSlotId, settings.ambience, settings.volume]);
 
-  // Keyboard Shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        // Disable shortcuts if settings modal is open or typing in input
-        if (showSettings || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-        // Undo/Redo
-        if (e.ctrlKey || e.metaKey) {
-            if (e.key === 'z') {
-                e.preventDefault();
-                if (e.shiftKey) handleRedo();
-                else handleUndo();
-            } else if (e.key === 'y') {
-                e.preventDefault();
-                handleRedo();
-            }
-            return;
-        }
-
-        // Tools
-        const key = e.key.toLowerCase();
-        if (key === 'b') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.None);
-            audio.playClick();
-        } else if (key === 'r') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.Road);
-            audio.playClick();
-        } else if (key === '1') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.Residential);
-            audio.playClick();
-        } else if (key === '2') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.Commercial);
-            audio.playClick();
-        } else if (key === '3') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.Industrial);
-            audio.playClick();
-        } else if (key === '4') {
-            setActiveCategory('building');
-            setSelectedTool(BuildingType.Park);
-            audio.playClick();
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, showSettings]);
-
-  // Start Screen Handler
-  const handleStartGame = (slotId: string, ai: boolean) => {
-    setAiEnabled(ai);
-    loadSlot(slotId);
-  };
-
-  const ensureApiKey = async () => {
-    if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
-      if (!(await (window as any).aistudio.hasSelectedApiKey())) {
-        await (window as any).aistudio.openSelectKey();
-      }
-    }
-  };
-
-  const handleApiError = async (error: any) => {
-    console.error(error);
-    let isPermissionError = false;
-    const msg = (error?.message || error?.toString() || '').toLowerCase();
-    const json = JSON.stringify(error || {}).toLowerCase();
-    
-    if (error?.status === 403 || error?.error?.code === 403 || 
-        msg.includes('403') || msg.includes('permission') || msg.includes('denied') ||
-        json.includes('403') || json.includes('permission')) {
-        isPermissionError = true;
-    }
-
-    if (isPermissionError) {
-        if (typeof (window as any).aistudio?.openSelectKey === 'function') {
-            await (window as any).aistudio.openSelectKey();
-            setAiResponse({ text: "I need your permission to access these magic tools! Please try again." });
-            return;
-        }
-    }
-    setAiResponse({ text: "Oh no! The magic fizzled out for a moment. Let's try again!" });
-  };
-
   const handleMagicAction = async (prompt: string, type: 'gen' | 'edit' | 'search' | 'maps') => {
     if (!prompt.trim()) return;
+    
+    // Cancel any existing request
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+
     setIsGenerating(true);
     setAiResponse(null);
     audio.resume();
     
     try {
-      await ensureApiKey();
+      if (typeof (window as any).aistudio?.hasSelectedApiKey === 'function') {
+        if (!(await (window as any).aistudio.hasSelectedApiKey())) {
+          await (window as any).aistudio.openSelectKey();
+        }
+      }
       
+      let resText = "";
       if (type === 'gen') {
-        setLoadingMessage("Gemini is painting a new masterpiece...");
-        const imageUrl = await generateImage(prompt, "1:1", "1K");
-        if (imageUrl) setAiResponse({ text: "I made this magical drawing just for you!" });
+        setLoadingMessage("Gemini is painting a masterpiece...");
+        const imageUrl = await generateImage(prompt);
+        if (imageUrl) setAiResponse({ text: "Magic created!" });
       } else if (type === 'edit') {
         setLoadingMessage("Adding some sparkle...");
         const mockBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
         const editedUrl = await editImage(mockBase64, prompt);
-        if (editedUrl) setAiResponse({ text: "I added some special magic to the picture!" });
+        if (editedUrl) setAiResponse({ text: "Magic edited!" });
       } else if (type === 'search') {
-        setLoadingMessage("Looking through the magical library...");
+        setLoadingMessage("Searching the clouds...");
         const res = await askGroundedQuestion(prompt);
         setAiResponse(res);
         if (settings.narrator) speakMessage(res.text);
       } else if (type === 'maps') {
         setLoadingMessage("Checking the magical map...");
-        if ("geolocation" in navigator) {
-          navigator.geolocation.getCurrentPosition(async (pos) => {
-            try {
-              const res = await findPlacesNearby(prompt, pos.coords.latitude, pos.coords.longitude);
-              setAiResponse(res);
-              if (settings.narrator) speakMessage(res.text);
-            } catch (err) {
-              await handleApiError(err);
-            }
-          }, (err) => {
-            setAiResponse({ text: "I couldn't find your location on the map." });
-            setIsGenerating(false);
-          });
-          return;
-        } else {
-             setAiResponse({ text: "I don't know where we are!" });
-             setIsGenerating(false);
-        }
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          const res = await findPlacesNearby(prompt, pos.coords.latitude, pos.coords.longitude);
+          setAiResponse(res);
+          if (settings.narrator) speakMessage(res.text);
+        });
       }
-    } catch (error) {
-      await handleApiError(error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleAnimate = async () => {
-    await ensureApiKey();
-    setIsGenerating(true);
-    setLoadingMessage("Bringing your world to life...");
-    try {
-      const mockBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-      const videoUrl = await generateVideo(mockBase64, "A magical colored world comes to life");
-      setActiveVideo(videoUrl);
-    } catch (error) {
-      await handleApiError(error);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleAnalyze = async () => {
-    setIsGenerating(true);
-    setLoadingMessage("Looking at your creation...");
-    try {
-      const mockBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-      const text = await analyzeArtwork(mockBase64);
-      setAiResponse({ text });
-      if (settings.narrator) speakMessage(text);
-    } catch (error) {
-      await handleApiError(error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') return;
+      console.error(error);
+      setAiResponse({ text: "The magic fizzled out. Try again!" });
     } finally {
       setIsGenerating(false);
     }
   };
 
   if (!currentSlotId) {
-      return <StartScreen onStart={handleStartGame} />;
+      return <StartScreen onStart={(slotId, ai) => { setAiEnabled(ai); loadSlot(slotId); }} />;
   }
 
   return (
     <div className={`relative w-screen h-screen overflow-hidden ${settings.highContrast ? 'bg-black' : 'bg-cyan-50'}`}>
-      <Suspense fallback={<LoadingOverlay message="Opening the magic book..." />}>
+      <Suspense fallback={<LoadingOverlay message="Loading 3D World..." />}>
         <IsoMap 
           grid={grid} 
           onTileClick={onTileClick} 
           settings={settings}
+          explosions={explosions}
+          onExplosionComplete={removeExplosion}
         />
       </Suspense>
 
       <UIOverlay 
-        grid={grid}
-        stats={stats}
-        activeCategory={activeCategory}
-        setActiveCategory={setActiveCategory}
-        selectedColor={selectedColor}
-        setSelectedColor={setSelectedColor}
-        selectedTool={selectedTool}
-        setSelectedTool={setSelectedTool}
+        grid={grid} stats={stats} activeCategory={activeCategory} setActiveCategory={setActiveCategory}
+        selectedColor={selectedColor} setSelectedColor={setSelectedColor}
+        selectedTool={selectedTool} setSelectedTool={setSelectedTool}
         onMagicAction={handleMagicAction}
-        onAnimate={handleAnimate}
-        onAnalyze={handleAnalyze}
-        aiResponse={aiResponse}
-        isGenerating={isGenerating}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        canUndo={canUndo}
-        canRedo={canRedo}
+        onAnimate={async () => {
+          setIsGenerating(true);
+          setLoadingMessage("Animating your world...");
+          try {
+            const url = await generateVideo("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==", "Live!");
+            setActiveVideo(url);
+          } catch(e) { console.error(e); }
+          finally { setIsGenerating(false); }
+        }}
+        onAnalyze={async () => {
+          setIsGenerating(true);
+          try {
+            const text = await analyzeArtwork("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==");
+            setAiResponse({ text });
+            if (settings.narrator) speakMessage(text);
+          } finally { setIsGenerating(false); }
+        }}
+        aiResponse={aiResponse} isGenerating={isGenerating}
+        onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo}
         onOpenSettings={() => setShowSettings(true)}
       />
 
-      {showSettings && (
-          <SettingsModal 
-              settings={settings} 
-              onUpdate={setSettings} 
-              onClose={() => setShowSettings(false)} 
-          />
-      )}
-
+      {showSettings && <SettingsModal settings={settings} onUpdate={setSettings} onClose={() => setShowSettings(false)} />}
       {isGenerating && <LoadingOverlay message={loadingMessage} />}
       
       {activeVideo && (
         <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4">
           <div className="relative max-w-4xl w-full">
-            <video 
-              src={activeVideo} 
-              controls 
-              autoPlay 
-              className="w-full rounded-3xl shadow-2xl border-8 border-white"
-            />
-            <button 
-              onClick={() => setActiveVideo(null)}
-              className="absolute -top-6 -right-6 bg-white text-slate-800 rounded-full p-5 text-3xl shadow-2xl hover:scale-110 transition-transform pointer-events-auto border-4 border-slate-200"
-            >
-              ✕
-            </button>
+            <video src={activeVideo} controls autoPlay className="w-full rounded-3xl border-8 border-white" />
+            <button onClick={() => setActiveVideo(null)} className="absolute -top-6 -right-6 bg-white rounded-full p-4 text-2xl">✕</button>
           </div>
         </div>
       )}

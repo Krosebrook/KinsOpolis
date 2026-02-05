@@ -11,6 +11,8 @@ import { Grid, DecorationType, AppSettings, BuildingType } from '../types';
 import { GRID_SIZE, DECORATIONS, BUILDINGS } from '../constants';
 import ProceduralBuilding from './3d/ProceduralBuilding';
 import WildlifeSystem from './3d/WildlifeSystem';
+import WeatherSystem from './3d/WeatherSystem';
+import ExplosionEffect from './3d/ExplosionEffect';
 
 const boxGeo = new THREE.BoxGeometry(0.95, 0.2, 0.95);
 const cylinderGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8);
@@ -125,42 +127,50 @@ const Decoration = ({ type, color, isNight }: { type: DecorationType, color: str
   );
 };
 
-// Procedural roadside details like streetlights and barriers
 const RoadsideDetails = ({ type, x, y, isNight }: { type: BuildingType, x: number, y: number, isNight?: boolean }) => {
-  if (type !== BuildingType.Highway) return null;
+  if (type !== BuildingType.Highway && type !== BuildingType.Road) return null;
 
   const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
   const rotation = Math.floor(hash * 4) * (Math.PI / 2);
 
-  if (hash > 0.7) return null;
+  // Sparse population check
+  if (hash > 0.4) return null;
 
   return (
     <group rotation={[0, rotation, 0]} position={[0, 0, 0]}>
-      {/* Streetlight */}
-      {hash < 0.15 && (
+      {/* Highway Streetlight */}
+      {type === BuildingType.Highway && hash < 0.15 && (
         <group position={[0.45, 0, 0]}>
            <mesh position={[0, 0.5, 0]} castShadow>
-               <cylinderGeometry args={[0.05, 0.05, 1, 8]} />
+               <cylinderGeometry args={[0.03, 0.03, 1, 8]} />
                <meshStandardMaterial color="#475569" />
            </mesh>
            <mesh position={[-0.2, 0.9, 0]} rotation={[0, 0, Math.PI/4]}>
-               <boxGeometry args={[0.4, 0.05, 0.05]} />
+               <boxGeometry args={[0.4, 0.03, 0.03]} />
                <meshStandardMaterial color="#475569" />
            </mesh>
-           <mesh position={[-0.35, 0.8, 0]}>
-               <sphereGeometry args={[0.1, 8, 8]} />
+           <mesh position={[-0.35, 0.82, 0]}>
+               <sphereGeometry args={[0.08, 8, 8]} />
                <meshStandardMaterial color="#fcd34d" emissive="#fcd34d" emissiveIntensity={isNight ? 2 : 0.5} />
            </mesh>
            {isNight && <pointLight position={[-0.35, 0.7, 0]} distance={3} intensity={2} color="#fcd34d" />}
         </group>
       )}
 
-      {/* Road Barrier */}
-      {hash > 0.4 && hash < 0.7 && (
-         <mesh position={[-0.45, 0.15, 0]} castShadow>
-            <boxGeometry args={[0.1, 0.3, 0.8]} />
-            <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
+      {/* Highway Barrier */}
+      {type === BuildingType.Highway && hash >= 0.15 && hash < 0.3 && (
+         <mesh position={[-0.48, 0.15, 0]} castShadow>
+            <boxGeometry args={[0.05, 0.25, 0.8]} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.4} />
          </mesh>
+      )}
+
+      {/* Residential Fire Hydrant or Small Detail */}
+      {type === BuildingType.Road && hash < 0.1 && (
+        <mesh position={[0.42, 0.15, 0]} castShadow>
+          <cylinderGeometry args={[0.06, 0.06, 0.2, 8]} />
+          <meshStandardMaterial color="#ef4444" />
+        </mesh>
       )}
     </group>
   );
@@ -173,9 +183,9 @@ const GroundSystem = ({ color, buildingType, onClick, onPointerOver, onPointerOu
     const isIndustrial = buildingType === BuildingType.Industrial;
 
     const materialColor = useMemo(() => {
-        if (isHighway) return '#1e293b'; 
-        if (isRoad) return '#334155'; 
-        if (isIndustrial) return '#94a3b8';
+        if (isHighway) return '#1e293b'; // Asphalt Dark
+        if (isRoad) return '#334155'; // City Street Grey
+        if (isIndustrial) return '#475569'; // Worn industrial asphalt
         if (isPark) return '#dcfce7'; 
         return color;
     }, [color, isHighway, isRoad, isIndustrial, isPark]);
@@ -186,16 +196,30 @@ const GroundSystem = ({ color, buildingType, onClick, onPointerOver, onPointerOu
                 <meshStandardMaterial color={materialColor} roughness={1} />
             </mesh>
             
-            {/* Highway Thicker Base */}
+            {/* Unique Highway Styling */}
             {isHighway && (
-                 <mesh position={[0, -0.15, 0]} receiveShadow>
-                     <boxGeometry args={[1, 0.1, 1]} />
-                     <meshStandardMaterial color="#0f172a" />
-                 </mesh>
+                 <>
+                    <mesh position={[0, 0.11, 0]} receiveShadow>
+                        <planeGeometry args={[0.05, 1]} />
+                        <meshStandardMaterial color="#eab308" emissive="#eab308" emissiveIntensity={0.2} />
+                    </mesh>
+                    <mesh position={[0, -0.15, 0]} receiveShadow>
+                        <boxGeometry args={[1, 0.1, 1]} />
+                        <meshStandardMaterial color="#0f172a" />
+                    </mesh>
+                 </>
+            )}
+
+            {/* Industrial Texture (Simple line pattern) */}
+            {isIndustrial && (
+                <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <planeGeometry args={[0.95, 0.95]} />
+                    <meshStandardMaterial color="#475569" roughness={1} metalness={0.1} />
+                </mesh>
             )}
 
             {/* Road curbs/sidewalks */}
-            {(isRoad || isHighway) && (
+            {(isRoad || isHighway || isIndustrial) && (
                 <>
                      <mesh position={[0.48, 0.11, 0]} receiveShadow>
                          <boxGeometry args={[0.04, 0.02, 1]} />
@@ -243,7 +267,15 @@ const Tile = ({ x, y, color, decoration, buildingType, onClick, settings }: any)
   );
 };
 
-const IsoMap = ({ grid, onTileClick, settings }: { grid: Grid, onTileClick: (x: number, y: number) => void, settings: AppSettings }) => {
+interface IsoMapProps {
+  grid: Grid;
+  onTileClick: (x: number, y: number) => void;
+  settings: AppSettings;
+  explosions: { id: string; x: number; y: number; type: BuildingType }[];
+  onExplosionComplete: (id: string) => void;
+}
+
+const IsoMap = ({ grid, onTileClick, settings, explosions = [], onExplosionComplete }: IsoMapProps) => {
   const tiles = useMemo(() => {
     return grid.map((row, y) => 
       row.map((tile, x) => (
@@ -282,7 +314,7 @@ const IsoMap = ({ grid, onTileClick, settings }: { grid: Grid, onTileClick: (x: 
                     shadow-camera-top={20}
                     shadow-camera-bottom={-20}
                 />
-                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+                <Stars radius={100} count={5000} factor={4} saturation={0} fade speed={1} />
                 <fog attach="fog" args={['#020617', 20, 100]} />
             </>
         ) : (
@@ -305,20 +337,28 @@ const IsoMap = ({ grid, onTileClick, settings }: { grid: Grid, onTileClick: (x: 
         <group>{tiles}</group>
         <WildlifeSystem grid={grid} />
         
+        {explosions.map(exp => (
+          <ExplosionEffect 
+            key={exp.id} 
+            x={exp.x - WORLD_OFFSET} 
+            y={exp.y - WORLD_OFFSET} 
+            type={exp.type} 
+            onComplete={() => onExplosionComplete(exp.id)} 
+          />
+        ))}
+
         {settings.weather !== 'sunny' && settings.weather !== 'rainbow' && settings.weather !== 'glitter' && (
             <WeatherSystem type={settings.weather as 'rain'|'snow'} />
         )}
 
         {settings.weather === 'glitter' && (
-          <Sparkles count={400} scale={20} size={6} speed={0.4} color="#ffd700" raycast={() => null} />
+          <Sparkles count={400} scale={20} size={6} speed={0.4} color="#ffd700" />
         )}
         
-        {/* Simple ground plane reflection/shadow catch */}
         <ContactShadows position={[0, -0.11, 0]} opacity={0.4} scale={30} blur={2} far={1} resolution={512} color="#000000" />
       </Canvas>
     </div>
   );
 };
 
-import WeatherSystem from './3d/WeatherSystem';
 export default IsoMap;

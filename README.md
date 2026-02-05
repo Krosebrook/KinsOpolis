@@ -1,20 +1,21 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# Sky Metropolis Builder 3000
 
-This contains everything you need to run your app locally.
+## 🏆 Quality Metrics
+The project refactor maintains a high **QualityScore**:
+`QualityScore = (LighthousePWA * 0.4) + (OfflineReady * 0.3) + (AILatencyScore * 0.2) + (A11yScore * 0.1)`
 
-View your app in AI Studio: https://ai.studio/apps/drive/1D8DbxlWnbfjCM9-V2PLcoEChnFUyTDTD
+- **Lighthouse PWA:** Target 100/100.
+- **OfflineReady:** Binary (1 if fallback page works).
+- **AILatencyScore:** Inverse of average response time for Gemini Flash.
 
-## Run Locally
+## 🏗️ Architecture
+- **Rendering:** Three.js with InstancedMesh for high-performance citizens and particles.
+- **Logic:** Custom hooks (`useGameState`) manage persistent JSON state.
+- **Service Worker:** Production-ready lifecycle for asset durability.
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## ✅ Verification
+1. Run `npx serve .`
+2. Open Chrome DevTools -> Application -> Service Workers.
+3. Check "Offline" and refresh.
+4. Verify `offline.html` or cached `index.html` loads.

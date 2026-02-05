@@ -12,7 +12,6 @@ import { GRID_SIZE } from '../../constants';
 const bodyGeo = new THREE.BoxGeometry(0.1, 0.25, 0.1);
 const headGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
 const hatGeo = new THREE.ConeGeometry(0.06, 0.1, 8);
-const bagGeo = new THREE.BoxGeometry(0.08, 0.12, 0.04);
 
 interface Props {
     grid: Grid;
@@ -30,11 +29,11 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, i
     
     const bodyMesh = useRef<THREE.InstancedMesh>(null);
     const headMesh = useRef<THREE.InstancedMesh>(null);
-    const hatMesh = useRef<THREE.InstancedMesh>(null); // New accessory
+    const hatMesh = useRef<THREE.InstancedMesh>(null);
     
     const agentsData = useRef<Citizen[]>([]);
     
-    // 0: targetX, 1: targetZ, 2: hasHat, 3: speed, 4: state, 5: timer, 6: gaitFreq, 7: gaitAmp
+    // 0: targetX, 1: targetZ, 2: hasHat, 3: speed, 4: state (0:walking, 1:idle), 5: timer, 6: gaitFreq, 7: gaitAmp
     const targets = useRef<Float32Array>(new Float32Array(0)); 
     
     const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -43,6 +42,7 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, i
         const tiles: {x: number, y: number}[] = [];
         grid.forEach(row => row.forEach(tile => {
             if (tile.buildingType === BuildingType.Road || 
+                tile.buildingType === BuildingType.Highway ||
                 tile.buildingType === BuildingType.Park || 
                 tile.buildingType === BuildingType.None) {
                 tiles.push({x: tile.x, y: tile.y});
@@ -80,7 +80,7 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, i
             const idx = i * 8;
             newTargets[idx+0] = targetTile.x + (Math.random() - 0.5) * 0.6;
             newTargets[idx+1] = targetTile.y + (Math.random() - 0.5) * 0.6;
-            newTargets[idx+2] = Math.random() > 0.7 ? 1 : 0; // 30% chance for hat
+            newTargets[idx+2] = Math.random() > 0.7 ? 1 : 0; 
             newTargets[idx+3] = 0.005 + Math.random() * 0.01; 
             newTargets[idx+4] = Math.random() > 0.5 ? 1 : 0; 
             newTargets[idx+5] = Math.random() * 3; 
@@ -148,18 +148,23 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, i
             let headTurn = 0;
             let scaleY = 1;
             
-            if (aiState === 0) {
+            if (aiState === 0) { // Walking
                 bounce = Math.abs(Math.sin(time * gaitFreq)) * gaitAmp;
                 sway = Math.sin(time * gaitFreq * 0.5) * 0.15;
                 const dx = tx - agent.x;
                 const dy = ty - agent.y;
                 dummy.rotation.set(0, -Math.atan2(dy, dx) + sway, 0);
-            } else {
-                bounce = Math.sin(time * 2 + i) * 0.005; 
-                const shrugCycle = Math.sin(time * 0.5 + i * 13.5);
-                if (shrugCycle > 0.95) scaleY = 1.05;
-                const lookFactor = Math.sin(time * 0.7 + i * 100); 
-                if (lookFactor > 0.7) headTurn = Math.sin(time * 2) * 0.6;
+            } else { // Idle
+                // Gentle breathing
+                bounce = Math.sin(time * 1.5 + i) * 0.003; 
+                
+                // Subtle shoulder shrugs (using scaleY)
+                const shrug = Math.max(0, Math.sin(time * 0.5 + i * 2) - 0.9) * 0.5;
+                scaleY = 1 + shrug;
+                
+                // Smooth head turns
+                headTurn = Math.sin(time * 0.8 + i * 1.5) * 0.4;
+                
                 dummy.rotation.set(0, 0, 0);
             }
 
@@ -170,11 +175,11 @@ const PopulationSystem: React.FC<Props> = ({ grid, population, onCitizenClick, i
 
             dummy.position.set(wx, -0.3 + 0.3 + bounce * 0.8 + 0.01 + (scaleY - 1) * 0.2, wz);
             if (aiState === 1) dummy.rotation.set(0, headTurn, 0);
+            else dummy.rotation.set(0, dummy.rotation.y, 0); 
             dummy.scale.set(1, 1, 1);
             dummy.updateMatrix();
             headMesh.current.setMatrixAt(i, dummy.matrix);
 
-            // Hat Logic
             if (hasHat) {
                 dummy.position.set(wx, -0.3 + 0.38 + bounce * 0.8 + (scaleY - 1) * 0.2, wz);
                 dummy.scale.set(1, 1, 1);

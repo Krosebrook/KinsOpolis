@@ -95,9 +95,12 @@ const AnimatedSmoke = ({ position }: { position: [number, number, number] }) => 
         ref.current.children.forEach((child, i) => {
             const t = state.clock.elapsedTime;
             const offset = i * 2;
+            const item = child as THREE.Mesh;
             child.position.y = ((t + offset) % 3) * 0.5;
             child.scale.setScalar(0.1 + child.position.y * 0.3);
-            (child.material as THREE.MeshBasicMaterial).opacity = 1 - (child.position.y / 1.5);
+            if (item.material instanceof THREE.MeshBasicMaterial) {
+                item.material.opacity = 1 - (child.position.y / 1.5);
+            }
         });
     });
 
@@ -173,7 +176,7 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
   const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
   const variant = Math.floor(hash * 100); 
   const rotation = Math.floor(hash * 4) * (Math.PI / 2);
-  const style = Math.floor(hash * 5); 
+  const style = Math.floor(hash * 6); // More variety
   
   const color = useMemo(() => {
     const c = new THREE.Color(baseColor);
@@ -221,22 +224,46 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
 
           case BuildingType.Residential:
             return (
-                <>
+                <group>
                   <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.3, 0]} scale={[0.7, 0.6, 0.6]} />
-                  {variant % 3 === 0 && <Fence position={[0, 0, 0]} />}
-                  {style <= 1 && (
-                      <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.75, 0]} scale={[0.6, 0.4, 0.6]} rotation={[0, Math.PI/4, 0]} />
+                  
+                  {/* Varied Roofs */}
+                  {style === 0 && ( // Hipped Roof
+                    <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.75, 0]} scale={[0.65, 0.4, 0.65]} rotation={[0, Math.PI/4, 0]} />
                   )}
-                  {style > 1 && (
-                      <mesh {...commonProps} material={roofMat} geometry={prismGeo} position={[0, 0.7, 0]} scale={[0.5, 0.4, 0.6]} rotation={[0, 0, Math.PI/2]} />
+                  {style === 1 && ( // Gabled Roof
+                    <mesh {...commonProps} material={roofMat} geometry={prismGeo} position={[0, 0.7, 0]} scale={[0.55, 0.4, 0.65]} rotation={[0, 0, Math.PI/2]} />
                   )}
-                  <WindowBlock isNight={isNight} position={[0.2, 0.3, 0.31]} scale={[0.15, 0.2, 0.05]} />
-                  <WindowBlock isNight={isNight} position={[-0.2, 0.3, 0.31]} scale={[0.15, 0.2, 0.05]} />
+                  {style === 2 && ( // Flat Roof with AC
+                    <group position={[0, 0.6, 0]}>
+                        <mesh {...commonProps} material={roofMat} scale={[0.7, 0.05, 0.6]}>
+                            <boxGeometry />
+                        </mesh>
+                        <ACUnit position={[0.1, 0.1, 0.1]} />
+                    </group>
+                  )}
+                  {style >= 3 && ( // Steep A-Frame
+                    <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.8, 0]} scale={[0.55, 0.6, 0.55]} rotation={[0, Math.PI/4, 0]} />
+                  )}
+
+                  {/* Varied Windows */}
+                  {variant % 2 === 0 ? (
+                    <>
+                        <WindowBlock isNight={isNight} position={[0.2, 0.35, 0.31]} scale={[0.12, 0.15, 0.05]} />
+                        <WindowBlock isNight={isNight} position={[-0.2, 0.35, 0.31]} scale={[0.12, 0.15, 0.05]} />
+                    </>
+                  ) : (
+                    <WindowBlock isNight={isNight} position={[0, 0.4, 0.31]} scale={[0.4, 0.15, 0.05]} />
+                  )}
+
+                  {/* Fence or Yard */}
+                  {variant % 5 === 0 && <Fence position={[0, 0, 0]} />}
+
                   <mesh position={[0, 0.15, 0.31]} scale={[0.15, 0.3, 0.02]}>
                       <boxGeometry />
                       <meshStandardMaterial color="#78350f" />
                   </mesh>
-                </>
+                </group>
             );
 
           case BuildingType.Commercial:
