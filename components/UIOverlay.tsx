@@ -3,195 +3,314 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useEffect, useRef, useState } from 'react';
-import { BuildingType, CityStats, AIGoal, NewsItem, LensMode, Grid } from '../types';
-import { BUILDINGS } from '../constants';
-import AnalysisOverlay from './AnalysisOverlay';
+import React, { useState } from 'react';
+import { DecorationType, BuildingType, Grid, AIResponse, CityStats } from '../types';
+import { PALETTE, DECORATIONS, BUILDINGS } from '../constants';
 
-interface UIOverlayProps {
-  stats: CityStats;
-  selectedTool: BuildingType;
-  onSelectTool: (type: BuildingType) => void;
-  currentGoal: AIGoal | null;
-  newsFeed: NewsItem[];
-  onClaimReward: () => void;
-  isGeneratingGoal: boolean;
-  aiEnabled: boolean;
-  lensMode: LensMode;
-  setLensMode: (mode: LensMode) => void;
+interface UIProps {
   grid: Grid;
+  stats: CityStats;
+  activeCategory: 'decoration' | 'building';
+  setActiveCategory: (c: 'decoration' | 'building') => void;
+  selectedColor: string;
+  setSelectedColor: (c: string) => void;
+  selectedTool: DecorationType | BuildingType;
+  setSelectedTool: (t: DecorationType | BuildingType) => void;
+  onMagicAction: (p: string, type: 'gen' | 'edit' | 'search' | 'maps') => void;
+  onAnimate: () => void;
+  onAnalyze: () => void;
+  aiResponse: AIResponse | null;
+  isGenerating: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
   onOpenSettings: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
 }
 
-const tools = [
-  BuildingType.None,
-  BuildingType.Road,
-  BuildingType.Residential,
-  BuildingType.Commercial,
-  BuildingType.Industrial,
-  BuildingType.Park,
-  BuildingType.Police,
-  BuildingType.School,
-];
-
-const ToolTooltip: React.FC<{ type: BuildingType; money: number }> = ({ type, money }) => {
-  const config = BUILDINGS[type];
-  const canAfford = money >= config.cost;
-
-  return (
-    <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 w-56 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-4 border-4 border-slate-700 shadow-2xl z-50 animate-fade-in pointer-events-none">
-       <div className="absolute top-full left-1/2 -translate-x-1/2 border-[10px] border-transparent border-t-slate-700 translate-y-[-2px]"></div>
-       <div className="text-center border-b border-white/10 pb-2 mb-2">
-         <div className="font-black text-xl text-yellow-400 leading-none mb-1">{config.name}</div>
-       </div>
-       <div className="text-sm text-slate-200 mb-3 text-center leading-tight font-medium">
-         {config.description}
-       </div>
-       <div className="space-y-1.5 bg-black/30 p-3 rounded-xl">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-slate-400 font-bold">Cost</span>
-            <span className={`font-black ${canAfford ? 'text-green-400' : 'text-red-400'}`}>${config.cost}</span>
-          </div>
-       </div>
-    </div>
-  );
-};
-
-const ToolButton: React.FC<{
+interface ToolButtonProps {
   type: BuildingType;
-  isSelected: boolean;
+  selected: boolean;
   onClick: () => void;
   money: number;
-  onHover: (type: BuildingType | null) => void;
-}> = ({ type, isSelected, onClick, money, onHover }) => {
-  const config = BUILDINGS[type];
-  const canAfford = money >= config.cost;
-  const isBulldoze = type === BuildingType.None;
-  const bgColor = isBulldoze ? config.color : config.color;
+}
 
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => onHover(type)}
-      onMouseLeave={() => onHover(null)}
-      disabled={!isBulldoze && !canAfford}
-      className={`
-        relative flex flex-col items-center justify-center rounded-2xl border-4 transition-all shadow-xl flex-shrink-0
-        w-16 h-16 md:w-20 md:h-20
-        ${isSelected ? 'border-white bg-yellow-400 scale-110 z-10 rotate-3' : 'border-black/20 bg-white/90 hover:bg-white hover:scale-105'}
-        ${!isBulldoze && !canAfford ? 'opacity-60 grayscale' : 'cursor-pointer'}
-      `}
-    >
-      <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg mb-1 flex items-center justify-center overflow-hidden shadow-inner ring-2 ring-black/10" style={{ backgroundColor: isBulldoze ? '#fee2e2' : bgColor }}>
-        {isBulldoze && <div className="text-red-500 font-black text-2xl">💣</div>}
-        {type === BuildingType.Road && <div className="text-xl">🛣️</div>}
-        {type === BuildingType.Police && <div className="text-xl">👮</div>}
-        {type === BuildingType.School && <div className="text-xl">📚</div>}
-      </div>
-      <span className="text-[10px] md:text-xs font-black text-slate-800 uppercase tracking-tight leading-none text-center px-1">{config.name}</span>
-    </button>
-  );
+const ToolButton: React.FC<ToolButtonProps> = ({ type, selected, onClick, money }) => {
+    if (type === BuildingType.None) {
+        return (
+            <button
+                onClick={onClick}
+                className={`group relative flex flex-col items-center justify-center min-w-[5.5rem] h-24 rounded-[2rem] transition-all ${
+                    selected
+                    ? 'bg-red-500 text-white scale-110 shadow-lg border-4 border-white' 
+                    : 'bg-red-500/20 text-red-200 hover:bg-red-500/40'
+                }`}
+            >
+                <span className="text-4xl">🚜</span>
+                <span className="text-[10px] font-black uppercase mt-1 tracking-tighter">Bulldoze</span>
+                <div className="absolute top-2 right-2 bg-red-700 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">B</div>
+            </button>
+        );
+    }
+
+    const info = BUILDINGS[type];
+    const canAfford = money >= info.cost;
+
+    return (
+        <button
+            onClick={onClick}
+            className={`group relative flex flex-col items-center justify-center min-w-[5.5rem] h-24 rounded-[2rem] transition-all ${
+                selected 
+                ? 'bg-white text-slate-800 scale-110 shadow-lg border-4 border-yellow-300' 
+                : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+            } ${!canAfford ? 'opacity-70 grayscale-[0.5]' : ''}`}
+        >
+            <span className="text-3xl">{info.icon}</span>
+            <span className="text-[10px] font-black uppercase mt-1 tracking-tighter">{info.name}</span>
+            <span className={`text-[10px] font-bold px-2 rounded-full mt-1 ${canAfford ? 'text-yellow-400 bg-slate-800' : 'text-red-300 bg-red-900/50'}`}>${info.cost}</span>
+            
+            {/* Shortcut Hint */}
+            {type === BuildingType.Road && <div className="absolute top-2 right-2 bg-slate-600 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">R</div>}
+            {type === BuildingType.Residential && <div className="absolute top-2 right-2 bg-slate-600 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">1</div>}
+            {type === BuildingType.Commercial && <div className="absolute top-2 right-2 bg-slate-600 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">2</div>}
+            {type === BuildingType.Industrial && <div className="absolute top-2 right-2 bg-slate-600 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">3</div>}
+            {type === BuildingType.Park && <div className="absolute top-2 right-2 bg-slate-600 text-white text-[8px] font-bold px-1 rounded opacity-0 group-hover:opacity-100">4</div>}
+
+            {/* Enhanced Tooltip */}
+            <div className="absolute bottom-full mb-4 hidden group-hover:block w-56 bg-slate-900/95 text-white p-4 rounded-2xl border-4 border-slate-700 backdrop-blur-xl shadow-2xl z-50 animate-fade-in-up pointer-events-none">
+                <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
+                    <span className="font-black text-yellow-400 text-lg">{info.name}</span>
+                    <span className={`font-mono font-bold ${canAfford ? 'text-green-400' : 'text-red-500'}`}>${info.cost}</span>
+                </div>
+                
+                <div className="text-xs text-slate-300 mb-3 italic leading-relaxed">
+                    {info.desc}
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-slate-800 rounded-xl p-2 text-center border border-slate-600">
+                        <div className="text-slate-400 text-[9px] font-black uppercase tracking-wider mb-0.5">Citizens</div>
+                        <div className="font-black text-blue-400 text-sm">+{info.pop}</div>
+                    </div>
+                    <div className="bg-slate-800 rounded-xl p-2 text-center border border-slate-600">
+                        <div className="text-slate-400 text-[9px] font-black uppercase tracking-wider mb-0.5">Income</div>
+                        <div className="font-black text-green-400 text-sm">+${info.income}</div>
+                    </div>
+                </div>
+
+                {/* Arrow */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[2px] border-8 border-transparent border-t-slate-700"></div>
+            </div>
+        </button>
+    );
 };
 
-const UIOverlay: React.FC<UIOverlayProps> = ({
-  stats,
-  selectedTool,
-  onSelectTool,
-  currentGoal,
-  newsFeed,
-  onClaimReward,
-  isGeneratingGoal,
-  aiEnabled,
-  lensMode,
-  setLensMode,
-  grid,
-  onOpenSettings,
-  onUndo,
-  onRedo,
-  canUndo,
-  canRedo
+const UIOverlay: React.FC<UIProps> = ({ 
+  stats, activeCategory, setActiveCategory,
+  selectedColor, setSelectedColor, 
+  selectedTool, setSelectedTool,
+  onMagicAction, onAnimate, onAnalyze, aiResponse,
+  isGenerating, onUndo, onRedo, canUndo, canRedo, onOpenSettings
 }) => {
-  const newsRef = useRef<HTMLDivElement>(null);
-  const [hoveredTool, setHoveredTool] = useState<BuildingType | null>(null);
-
-  useEffect(() => {
-    if (newsRef.current) newsRef.current.scrollTop = newsRef.current.scrollHeight;
-  }, [newsFeed]);
+  const [prompt, setPrompt] = useState("");
+  const [magicMode, setMagicMode] = useState<'gen' | 'edit' | 'search' | 'maps'>('gen');
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-3 md:p-6 font-sans z-10 text-slate-800">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-start pointer-events-auto gap-4 w-full max-w-full">
-        <div className="bg-white/95 p-3 md:p-4 rounded-3xl border-4 border-blue-400 shadow-[0_8px_0_rgb(59,130,246)] flex gap-4 md:gap-8 items-center justify-between md:justify-start w-full md:w-auto transform hover:scale-[1.02] transition-transform">
-          <div className="flex flex-col items-center">
-            <span className="text-2xl md:text-3xl">💰</span>
-            <span className="text-sm md:text-xl font-black text-slate-700">${stats.money.toLocaleString()}</span>
-          </div>
-          <div className="w-1 h-10 bg-blue-100 rounded-full"></div>
-          <div className="flex flex-col items-center">
-            <span className="text-2xl md:text-3xl">😊</span>
-            <span className="text-sm md:text-xl font-black text-slate-700">{stats.population.toLocaleString()}</span>
-          </div>
+    <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between">
+      {/* Top Bar - Magic Tools & Stats */}
+      <div className="flex justify-between items-start gap-4">
+        <div className="flex flex-col gap-4 max-w-xl w-full">
+            {/* Stats Card */}
+            <div className="pointer-events-auto bg-white/95 backdrop-blur rounded-[2rem] p-3 shadow-xl border-4 border-yellow-300 flex items-center justify-around">
+                <div className="flex items-center gap-2">
+                    <span className="text-2xl">💰</span>
+                    <span className="font-black text-slate-700 text-xl">${stats.money}</span>
+                </div>
+                <div className="w-1 h-8 bg-slate-100 rounded-full"></div>
+                <div className="flex items-center gap-2">
+                    <span className="text-2xl">👥</span>
+                    <span className="font-black text-slate-700 text-xl">{stats.population}</span>
+                </div>
+                <div className="w-1 h-8 bg-slate-100 rounded-full"></div>
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={onUndo} 
+                        disabled={!canUndo}
+                        className={`text-2xl transition-all ${!canUndo ? 'opacity-30' : 'hover:scale-110 active:scale-95 text-blue-500'}`}
+                        title="Undo (Ctrl+Z)"
+                    >
+                        ↩️
+                    </button>
+                    <button 
+                        onClick={onRedo} 
+                        disabled={!canRedo}
+                        className={`text-2xl transition-all ${!canRedo ? 'opacity-30' : 'hover:scale-110 active:scale-95 text-blue-500'}`}
+                        title="Redo (Ctrl+Y)"
+                    >
+                        ↪️
+                    </button>
+                </div>
+            </div>
+
+            {/* Magic Tools */}
+            <div className="pointer-events-auto bg-white/95 backdrop-blur rounded-[2.5rem] p-3 shadow-2xl border-4 border-cyan-200 flex flex-col gap-3">
+            <div className="flex gap-2 p-1 bg-slate-100 rounded-[2rem]">
+                {[
+                { id: 'gen', label: 'Create', icon: '🎨' },
+                { id: 'edit', label: 'Edit', icon: '✨' },
+                { id: 'search', label: 'Search', icon: '🔍' },
+                { id: 'maps', label: 'Places', icon: '📍' }
+                ].map(mode => (
+                <button
+                    key={mode.id}
+                    onClick={() => setMagicMode(mode.id as any)}
+                    className={`flex-1 py-2 px-3 rounded-[1.5rem] font-black text-[10px] uppercase tracking-tighter flex items-center justify-center gap-1 transition-all ${magicMode === mode.id ? 'bg-cyan-400 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`}
+                >
+                    <span>{mode.icon}</span> {mode.label}
+                </button>
+                ))}
+            </div>
+            <div className="flex gap-2 items-center px-2 pb-1">
+                <input 
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={
+                    magicMode === 'gen' ? "Imagine something..." :
+                    magicMode === 'edit' ? "Change something..." :
+                    magicMode === 'search' ? "Ask a question..." : "Find a place..."
+                }
+                className="flex-1 bg-transparent border-none outline-none font-bold text-slate-700 placeholder:text-slate-400 px-2"
+                />
+                <button 
+                onClick={() => onMagicAction(prompt, magicMode)}
+                disabled={isGenerating || !prompt}
+                className="bg-cyan-500 hover:bg-cyan-600 text-white font-black px-6 py-2 rounded-2xl shadow-lg transition-all active:scale-95 disabled:opacity-50"
+                >
+                GO
+                </button>
+            </div>
+            </div>
         </div>
 
-        <div className={`w-full md:w-96 bg-indigo-600 text-white rounded-3xl border-4 border-indigo-400 shadow-[0_8px_0_rgb(99,102,241)] overflow-hidden transition-all ${!aiEnabled ? 'opacity-80 grayscale' : ''}`}>
-          <div className="bg-indigo-800/50 px-4 py-2 flex justify-between items-center">
-            <span className="font-black text-sm uppercase tracking-wider flex items-center gap-2">
-              {aiEnabled ? <><span className={`text-xl ${isGeneratingGoal ? 'animate-spin' : 'animate-bounce'}`}>🤖</span> Robot Helper</> : "Sandbox Mode"}
-            </span>
-            {isGeneratingGoal && aiEnabled && <span className="text-xs font-bold text-yellow-300 animate-pulse">Thinking... 🤔</span>}
-          </div>
-          <div className="p-4 bg-indigo-500">
-            {aiEnabled ? (currentGoal ? (
-                <>
-                  <p className="text-base md:text-lg font-bold text-white mb-3 leading-snug">"{currentGoal.description}"</p>
-                  <div className="flex justify-between items-center bg-black/20 p-3 rounded-xl">
-                    <div className="text-sm font-bold text-indigo-100">
-                      Goal: <span className="text-yellow-300">
-                        {currentGoal.targetType === 'building_count' ? BUILDINGS[currentGoal.buildingType!].name : 
-                         currentGoal.targetType === 'money' ? 'Save' : 'Pop.'} {currentGoal.targetValue}
-                      </span>
-                    </div>
-                    <div className="text-sm font-black text-green-300 bg-green-900/40 px-3 py-1 rounded-full border border-green-400/30">+${currentGoal.reward} 🎁</div>
-                  </div>
-                  {currentGoal.completed && <button onClick={onClaimReward} className="mt-3 w-full bg-green-500 hover:bg-green-400 text-white font-black py-3 px-4 rounded-xl shadow-[0_4px_0_rgb(22,163,74)] active:shadow-none active:translate-y-1 transition-all text-lg uppercase tracking-wide animate-bounce">Collect Reward! 🎉</button>}
-                </>
-              ) : <div className="text-sm text-indigo-200 py-2 italic flex items-center gap-2">Waiting for mission... ⏳</div>) : <div className="text-sm text-indigo-200">Just build and have fun!</div>}
-          </div>
+        <div className="flex flex-col gap-4">
+          <button 
+            onClick={onOpenSettings}
+            className="pointer-events-auto bg-slate-800 hover:bg-slate-700 text-white rounded-3xl p-5 shadow-xl border-4 border-slate-600 flex flex-col items-center group transition-all active:scale-95"
+          >
+             <span className="text-3xl mb-1 group-hover:rotate-90 transition-transform duration-500">⚙️</span>
+          </button>
+
+          <button 
+            onClick={onAnalyze}
+            className="pointer-events-auto bg-pink-500 hover:bg-pink-600 text-white rounded-3xl p-5 shadow-xl border-4 border-pink-200 flex flex-col items-center group transition-all"
+          >
+            <span className="text-3xl mb-1 group-hover:scale-125 transition-transform">👁️</span>
+            <span className="font-black text-[10px] uppercase">Analyze</span>
+          </button>
+          
+          <button 
+            onClick={onAnimate}
+            className="pointer-events-auto bg-indigo-500 hover:bg-indigo-600 text-white rounded-3xl p-5 shadow-xl border-4 border-indigo-200 flex flex-col items-center group transition-all animate-pulse"
+          >
+            <span className="text-3xl mb-1 group-hover:rotate-12 transition-transform">🎬</span>
+            <span className="font-black text-[10px] uppercase">Animate</span>
+          </button>
         </div>
       </div>
 
-      <AnalysisOverlay lensMode={lensMode} setLensMode={setLensMode} stats={stats} grid={grid} aiEnabled={aiEnabled} />
-      
-      <button onClick={onOpenSettings} className="absolute top-4 right-4 pointer-events-auto bg-slate-800 text-white p-3 rounded-full shadow-lg hover:bg-slate-700 active:scale-95 transition-all z-50 border-2 border-slate-600">⚙️</button>
-
-      <div className="flex flex-col-reverse md:flex-row md:justify-between md:items-end pointer-events-auto mt-auto gap-4 w-full max-w-full">
-        <div className="relative flex flex-col items-center w-full md:w-auto gap-2">
-          {hoveredTool && <ToolTooltip type={hoveredTool} money={stats.money} />}
-          <div className="flex gap-2 items-center">
-            <div className="bg-white/90 p-2 rounded-2xl border-4 border-slate-300 shadow-xl flex gap-1">
-                <button disabled={!canUndo} onClick={onUndo} className="p-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-xl">↩️</button>
-                <button disabled={!canRedo} onClick={onRedo} className="p-3 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-xl">↪️</button>
+      {/* Center - Grounded Response Panel */}
+      {aiResponse && (
+        <div className="pointer-events-auto self-center bg-white/95 rounded-[2.5rem] p-8 border-8 border-pink-200 shadow-2xl max-w-2xl w-full transform hover:scale-[1.02] transition-transform flex flex-col gap-4">
+          <p className="text-lg font-bold text-slate-800 leading-relaxed italic text-center">
+            "{aiResponse.text}"
+          </p>
+          {aiResponse.groundingChunks && aiResponse.groundingChunks.length > 0 && (
+            <div className="flex flex-wrap gap-2 justify-center border-t pt-4 mt-2">
+              <span className="w-full text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Sources</span>
+              {aiResponse.groundingChunks.map((chunk, i) => {
+                const source = chunk.web || chunk.maps;
+                if (!source) return null;
+                return (
+                  <a 
+                    key={i} 
+                    href={source.uri} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="bg-cyan-50 hover:bg-cyan-100 text-cyan-600 px-3 py-1 rounded-full text-xs font-bold border border-cyan-200 transition-colors"
+                  >
+                    🔗 {source.title}
+                  </a>
+                );
+              })}
             </div>
-            <div className="bg-white/90 p-3 rounded-3xl border-4 border-slate-300 shadow-2xl w-full overflow-x-auto no-scrollbar">
-                <div className="flex gap-2 min-w-max">
-                {tools.map((type) => <ToolButton key={type} type={type} isSelected={selectedTool === type} onClick={() => onSelectTool(type)} money={stats.money} onHover={setHoveredTool} />)}
+          )}
+        </div>
+      )}
+
+      {/* Bottom Bar - Tools */}
+      <div className="flex flex-col gap-6 items-center">
+        {/* Mode Switcher */}
+        <div className="pointer-events-auto flex bg-white/90 backdrop-blur p-2 rounded-[2rem] shadow-2xl border-4 border-white gap-2">
+            <button
+                onClick={() => { setActiveCategory('decoration'); setSelectedTool(DecorationType.Flower); }}
+                className={`px-6 py-3 rounded-[1.5rem] font-black text-sm uppercase flex items-center gap-2 transition-all ${activeCategory === 'decoration' ? 'bg-pink-400 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+                <span>🎨</span> Paint
+            </button>
+            <button
+                onClick={() => { setActiveCategory('building'); setSelectedTool(BuildingType.Road); }}
+                className={`px-6 py-3 rounded-[1.5rem] font-black text-sm uppercase flex items-center gap-2 transition-all ${activeCategory === 'building' ? 'bg-yellow-400 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+                <span>🏗️</span> Build
+            </button>
+        </div>
+
+        {activeCategory === 'decoration' && (
+            <div className="flex flex-col gap-4 items-center animate-fade-in-up">
+                <div className="pointer-events-auto flex gap-3 bg-white/90 backdrop-blur p-4 rounded-[3rem] shadow-2xl border-4 border-white overflow-x-auto max-w-full no-scrollbar">
+                {PALETTE.map(color => (
+                    <button
+                    key={color}
+                    onClick={() => setSelectedColor(color)}
+                    className={`min-w-[3rem] h-12 rounded-full border-4 transition-all ${selectedColor === color ? 'border-slate-800 scale-125 z-10' : 'border-white hover:scale-110'}`}
+                    style={{ backgroundColor: color }}
+                    />
+                ))}
+                </div>
+
+                <div className="pointer-events-auto flex gap-4 bg-slate-800/80 backdrop-blur p-4 rounded-[2.5rem] shadow-2xl overflow-x-auto max-w-full no-scrollbar">
+                {(Object.keys(DECORATIONS) as DecorationType[]).map(type => (
+                    <button
+                    key={type}
+                    onClick={() => setSelectedTool(type)}
+                    className={`flex flex-col items-center justify-center min-w-[5.5rem] h-24 rounded-[2rem] transition-all ${
+                        selectedTool === type 
+                        ? 'bg-white text-slate-800 scale-110 shadow-lg' 
+                        : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
+                    }`}
+                    >
+                    <span className="text-4xl">{DECORATIONS[type].icon}</span>
+                    <span className="text-[10px] font-black uppercase mt-1 tracking-tighter">{DECORATIONS[type].name}</span>
+                    </button>
+                ))}
                 </div>
             </div>
-          </div>
-        </div>
-        <div className="w-full md:w-96 h-40 bg-orange-500 text-white rounded-3xl border-4 border-orange-400 shadow-[0_8px_0_rgb(234,88,12)] flex flex-col overflow-hidden relative">
-          <div className="bg-orange-700/30 px-4 py-2 font-black text-sm uppercase tracking-wider flex justify-between items-center"><span>📰 City News</span></div>
-          <div ref={newsRef} className="flex-1 overflow-y-auto p-4 space-y-3 font-bold text-sm scroll-smooth">
-            {newsFeed.length === 0 && <div className="text-orange-200/60 italic text-center mt-8">Quiet day... 🦗</div>}
-            {newsFeed.map((news) => (
-              <div key={news.id} className={`p-2 rounded-xl leading-tight relative shadow-sm border-2 ${news.type === 'positive' ? 'bg-green-500 border-green-400' : ''} ${news.type === 'negative' ? 'bg-red-500 border-red-400' : ''} ${news.type === 'neutral' ? 'bg-blue-500 border-blue-400' : ''}`}>{news.text}</div>
-            ))}
-          </div>
-        </div>
+        )}
+
+        {activeCategory === 'building' && (
+             <div className="pointer-events-auto flex gap-4 bg-slate-800/80 backdrop-blur p-4 rounded-[2.5rem] shadow-2xl overflow-x-auto max-w-full no-scrollbar animate-fade-in-up pb-8">
+                 {/* ToolButtons */}
+                 {(Object.keys(BUILDINGS) as BuildingType[]).map(type => (
+                     <ToolButton 
+                        key={type}
+                        type={type}
+                        selected={selectedTool === type}
+                        onClick={() => setSelectedTool(type)}
+                        money={stats.money}
+                     />
+                 ))}
+             </div>
+        )}
       </div>
     </div>
   );

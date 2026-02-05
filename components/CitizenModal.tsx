@@ -34,30 +34,51 @@ const CitizenModal: React.FC<Props> = ({ citizen, grid, stats, settings, onClose
                 return;
             }
 
-            // Find nearest building
-            let nearest = "Empty Lot";
-            let minDist = 999;
-            
-            // Simple check of 5x5 area around citizen
-            const cx = Math.round(citizen.x);
-            const cy = Math.round(citizen.y);
-            
-            for(let y = Math.max(0, cy-2); y <= Math.min(GRID_SIZE-1, cy+2); y++) {
-                for(let x = Math.max(0, cx-2); x <= Math.min(GRID_SIZE-1, cx+2); x++) {
-                    const tile = grid[y][x];
-                    if (tile.buildingType !== BuildingType.None && tile.buildingType !== BuildingType.Road) {
-                        const d = Math.sqrt(Math.pow(x-cx, 2) + Math.pow(y-cy, 2));
-                        if (d < minDist) {
-                            minDist = d;
-                            nearest = BUILDINGS[tile.buildingType].name;
+            try {
+                // Find nearest building
+                let nearest = "Empty Lot";
+                let minDist = 999;
+                
+                // Simple check of 5x5 area around citizen
+                const cx = Math.round(citizen.x);
+                const cy = Math.round(citizen.y);
+                
+                for(let y = Math.max(0, cy-2); y <= Math.min(GRID_SIZE-1, cy+2); y++) {
+                    for(let x = Math.max(0, cx-2); x <= Math.min(GRID_SIZE-1, cx+2); x++) {
+                        const tile = grid[y][x];
+                        if (tile.buildingType !== BuildingType.None && tile.buildingType !== BuildingType.Road) {
+                            const d = Math.sqrt(Math.pow(x-cx, 2) + Math.pow(y-cy, 2));
+                            if (d < minDist) {
+                                minDist = d;
+                                nearest = BUILDINGS[tile.buildingType].name;
+                            }
                         }
                     }
                 }
-            }
 
-            const data = await generateCitizenThought(stats, nearest, settings.weather, settings.isNight);
-            if (data) setThought(data);
-            setLoading(false);
+                const data = await generateCitizenThought(stats, nearest, settings.weather, settings.isNight);
+                if (data) setThought(data);
+                
+            } catch (error: any) {
+                console.error("Failed to fetch thought:", error);
+                
+                let isPermissionError = false;
+                if (error?.status === 403 || error?.error?.code === 403) isPermissionError = true;
+                const msg = (error?.message || error?.toString() || '').toLowerCase();
+                if (msg.includes('403') || msg.includes('permission')) isPermissionError = true;
+                 try {
+                    const json = JSON.stringify(error).toLowerCase();
+                    if (json.includes('403') || json.includes('permission')) isPermissionError = true;
+                } catch {}
+
+                if (isPermissionError) {
+                    if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+                        (window as any).aistudio.openSelectKey();
+                    }
+                }
+            } finally {
+                setLoading(false);
+            }
         };
 
         fetchThought();
@@ -90,7 +111,7 @@ const CitizenModal: React.FC<Props> = ({ citizen, grid, stats, settings, onClose
                     </div>
                 ) : (
                     <div className="text-center py-4 text-slate-500">
-                        Citizen was too shy to talk.
+                        Citizen was too shy to talk (or check API Key).
                     </div>
                 )}
                 

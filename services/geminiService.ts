@@ -3,173 +3,212 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { GoogleGenAI, Type } from "@google/genai";
-import { AIGoal, BuildingType, CityStats, Grid, NewsItem, CitizenThought } from "../types";
-import { BUILDINGS } from "../constants";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { Grid, CityStats, CitizenThought, AIResponse } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+/**
+ * Creates a new instance of the GoogleGenAI client.
+ * This is done on-demand to ensure the latest API key from the environment/dialog is used.
+ */
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const modelId = 'gemini-3-flash-preview';
-
-// --- Goal Generation ---
-
-const goalSchema = {
-  type: Type.OBJECT,
-  properties: {
-    description: {
-      type: Type.STRING,
-      description: "A super fun, short mission for a 10-year-old Mayor.",
-    },
-    targetType: {
-      type: Type.STRING,
-      enum: ['population', 'money', 'building_count'],
-      description: "What to check.",
-    },
-    targetValue: {
-      type: Type.INTEGER,
-      description: "The number to reach.",
-    },
-    buildingType: {
-      type: Type.STRING,
-      enum: [BuildingType.Residential, BuildingType.Commercial, BuildingType.Industrial, BuildingType.Park, BuildingType.Road],
-      description: "Which building to count.",
-    },
-    reward: {
-      type: Type.INTEGER,
-      description: "Money prize!",
-    },
-  },
-  required: ['description', 'targetType', 'targetValue', 'reward'],
+/**
+ * Extracts raw base64 bytes from a data URI or raw base64 string.
+ */
+const getBase64Bytes = (base64String: string) => {
+  if (base64String.includes(',')) {
+    return base64String.split(',')[1];
+  }
+  return base64String;
 };
 
-export const generateCityGoal = async (stats: CityStats, grid: Grid): Promise<AIGoal | null> => {
-  // Count buildings
-  const counts: Record<string, number> = {};
-  grid.flat().forEach(tile => {
-    counts[tile.buildingType] = (counts[tile.buildingType] || 0) + 1;
+/**
+ * Generates an image using the Gemini 3 Pro Image model.
+ * Supports customizable aspect ratio and image size.
+ */
+export const generateImage = async (prompt: string, aspectRatio: string = "1:1", imageSize: string = "1K") => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts: [{ text: `A magical, storybook illustration for children: ${prompt}. Bold colors, simple shapes.` }] },
+    config: {
+      imageConfig: { 
+        aspectRatio: aspectRatio as any, 
+        imageSize: imageSize as any 
+      }
+    },
   });
-
-  const context = `
-    Your City Stats:
-    Day: ${stats.day}
-    Money: $${stats.money}
-    People: ${stats.population}
-    Buildings: ${JSON.stringify(counts)}
-  `;
-
-  const prompt = `You are a fun Robot Helper for a 10-year-old City Mayor! 🤖
-  Create a fun, easy mission for the Mayor. 
-  Examples: "Build 5 Houses for new friends! 🏠", "Make a Park for playing! 🌳", "Save $500 for candy! 🍬".
-  Keep it simple and use emojis! Return JSON.`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: `${context}\n${prompt}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: goalSchema,
-        temperature: 0.8,
-      },
-    });
-
-    if (response.text) {
-      const goalData = JSON.parse(response.text) as Omit<AIGoal, 'completed'>;
-      return { ...goalData, completed: false };
-    }
-  } catch (error) {
-    console.error("Error generating goal:", error);
+  
+  for (const part of response.candidates[0].content.parts) {
+    if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
   }
   return null;
 };
 
-// --- News Feed Generation ---
-
-const newsSchema = {
-  type: Type.OBJECT,
-  properties: {
-    text: { type: Type.STRING, description: "A funny, 1-sentence news headline for kids." },
-    type: { type: Type.STRING, enum: ['positive', 'negative', 'neutral'] },
-  },
-  required: ['text', 'type'],
-};
-
-export const generateNewsEvent = async (stats: CityStats, recentAction: string | null): Promise<NewsItem | null> => {
-  const context = `City Stats - People: ${stats.population}, Money: ${stats.money}.`;
-  const prompt = "Write a super short, funny news headline for a kid's city game! Use emojis! Example: 'Cats take over the park! 🐱' or 'Donut factory explodes with flavor! 🍩'";
-
-  try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: `${context}\n${prompt}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: newsSchema,
-        temperature: 1.1, 
-      },
-    });
-
-    if (response.text) {
-      const data = JSON.parse(response.text);
-      return {
-        id: Date.now().toString() + Math.random(),
-        text: data.text,
-        type: data.type,
-      };
+/**
+ * Edits an existing image using text instructions via Gemini 2.5 Flash Image.
+ */
+export const editImage = async (base64Image: string, prompt: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: {
+      parts: [
+        { inlineData: { data: getBase64Bytes(base64Image), mimeType: 'image/png' } },
+        { text: prompt }
+      ]
     }
-  } catch (error) {
-    console.error("Error generating news:", error);
+  });
+  for (const part of response.candidates[0].content.parts) {
+    if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
   }
   return null;
 };
 
-// --- Citizen Thoughts ---
+/**
+ * Generates a short video from an image using Veo 3.1.
+ * Returns a blob URL to the generated MP4.
+ */
+export const generateVideo = async (base64Image: string, prompt: string, aspectRatio: "16:9" | "9:16" = "16:9") => {
+  const ai = getAI();
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-fast-generate-preview',
+    prompt: `Make this magical drawing come to life: ${prompt}`,
+    image: { imageBytes: getBase64Bytes(base64Image), mimeType: 'image/png' },
+    config: { numberOfVideos: 1, resolution: '720p', aspectRatio }
+  });
+  
+  // Polling for completion
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 10000));
+    operation = await ai.operations.getVideosOperation({ operation: operation });
+  }
+  
+  const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+  // Must append API key to fetch the video content
+  const res = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+};
 
-const citizenSchema = {
-    type: Type.OBJECT,
-    properties: {
-        name: { type: Type.STRING, description: "A funny fake name" },
-        job: { type: Type.STRING, description: "A silly job (e.g. 'Cloud Watcher')" },
-        thought: { type: Type.STRING, description: "One sentence observation about their surroundings or the weather." },
-        mood: { type: Type.STRING, enum: ['happy', 'angry', 'neutral'] }
+/**
+ * Analyzes an image using the thinking model (Gemini 3 Pro) to generate a supportive story.
+ */
+export const analyzeArtwork = async (base64Image: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [
+        { inlineData: { data: getBase64Bytes(base64Image), mimeType: 'image/png' } },
+        { text: "Look at this magical drawing. What do you see? Tell me a story about it in a way that is joyful and supportive for a young child." }
+      ]
     },
-    required: ['name', 'job', 'thought', 'mood']
+    config: {
+      thinkingConfig: { thinkingBudget: 32768 }
+    }
+  });
+  return response.text;
 };
 
-export const generateCitizenThought = async (
-    stats: CityStats, 
-    nearbyBuilding: string, 
-    weather: string, 
-    isNight: boolean
-): Promise<CitizenThought | null> => {
-    const context = `
-        The citizen is walking near a ${nearbyBuilding}.
-        Weather: ${weather}.
-        Time: ${isNight ? 'Night' : 'Day'}.
-        City Population: ${stats.population}.
-        City Money: ${stats.money}.
-    `;
-    
-    const prompt = `Generate a random citizen persona for a city builder game. 
-    They should make a brief, funny comment about their current situation (weather, location, or time).
-    Keep it kid-friendly.`;
+/**
+ * Converts text to speech using Gemini 2.5 Flash TTS.
+ * Plays the audio immediately using the Web Audio API.
+ */
+export const speakMessage = async (text: string) => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash-preview-tts",
+    contents: [{ parts: [{ text: `Say warmly: ${text}` }] }],
+    config: {
+      responseModalities: [Modality.AUDIO],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+    },
+  });
+  
+  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!base64Audio) return;
+  
+  // Audio Decoding
+  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  const audioData = atob(base64Audio);
+  const bytes = new Uint8Array(audioData.length);
+  for (let i = 0; i < audioData.length; i++) bytes[i] = audioData.charCodeAt(i);
+  
+  const buffer = new Int16Array(bytes.buffer);
+  const audioBuffer = ctx.createBuffer(1, buffer.length, 24000);
+  const channelData = audioBuffer.getChannelData(0);
+  for (let i = 0; i < buffer.length; i++) {
+    channelData[i] = buffer[i] / 32768.0;
+  }
+  
+  const source = ctx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(ctx.destination);
+  source.start();
+};
 
-    try {
-        const response = await ai.models.generateContent({
-            model: modelId,
-            contents: `${context}\n${prompt}`,
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: citizenSchema,
-                temperature: 1.0,
-            },
-        });
+/**
+ * Performs a grounded search using Google Search tool.
+ */
+export const askGroundedQuestion = async (question: string): Promise<AIResponse> => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: question,
+    config: { tools: [{ googleSearch: {} }] },
+  });
+  return {
+    text: response.text || "I'm not sure, let me look it up!",
+    groundingChunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
+};
 
-        if (response.text) {
-            return JSON.parse(response.text) as CitizenThought;
-        }
-    } catch (error) {
-        console.error("Error generating thought:", error);
+/**
+ * Finds nearby places using Google Maps grounding.
+ */
+export const findPlacesNearby = async (query: string, lat: number, lng: number): Promise<AIResponse> => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: query,
+    config: {
+      tools: [{ googleMaps: {} }],
+      toolConfig: { retrievalConfig: { latLng: { latitude: lat, longitude: lng } } }
+    },
+  });
+  return {
+    text: response.text || "I found some places for you!",
+    groundingChunks: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+  };
+};
+
+/**
+ * Generates a persona-based thought for a citizen using JSON schema.
+ */
+export const generateCitizenThought = async (stats: CityStats, nearestBuilding: string, weather: string, isNight: boolean): Promise<CitizenThought | null> => {
+  const ai = getAI();
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `As a citizen (Pop: ${stats.population}, Weather: ${weather}, Night: ${isNight ? 'Yes' : 'No'}), you are near a ${nearestBuilding}. What is your happy thought?`,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          job: { type: Type.STRING },
+          thought: { type: Type.STRING },
+          mood: { type: Type.STRING, enum: ['happy', 'neutral', 'angry'] }
+        },
+        required: ['name', 'job', 'thought', 'mood']
+      }
     }
+  });
+  
+  try {
+    return JSON.parse(response.text || "{}") as CitizenThought;
+  } catch (e) {
     return null;
+  }
 };

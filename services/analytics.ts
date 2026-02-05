@@ -7,7 +7,6 @@ import { Grid, BuildingType, CityStats, CityAnalysis } from '../types';
 import { GRID_SIZE } from '../constants';
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const modelId = 'gemini-3-flash-preview';
 
 /**
@@ -109,6 +108,9 @@ const reviewSchema = {
 };
 
 export const generateCityReview = async (stats: CityStats, grid: Grid): Promise<CityAnalysis | null> => {
+    // Instantiate here to pick up latest API key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     const counts: Record<string, number> = {};
     grid.flat().forEach(t => counts[t.buildingType] = (counts[t.buildingType] || 0) + 1);
     
@@ -144,8 +146,23 @@ export const generateCityReview = async (stats: CityStats, grid: Grid): Promise<
         if (response.text) {
             return JSON.parse(response.text) as CityAnalysis;
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error("AI Review failed", e);
+        
+        let isPermissionError = false;
+        if (e?.status === 403 || e?.error?.code === 403) isPermissionError = true;
+        const msg = (e?.message || e?.toString() || '').toLowerCase();
+        if (msg.includes('403') || msg.includes('permission')) isPermissionError = true;
+        try {
+            const json = JSON.stringify(e).toLowerCase();
+            if (json.includes('403') || json.includes('permission')) isPermissionError = true;
+        } catch {}
+
+        if (isPermissionError) {
+            if (typeof (window as any).aistudio?.openSelectKey === 'function') {
+                (window as any).aistudio.openSelectKey();
+            }
+        }
     }
     return null;
 }

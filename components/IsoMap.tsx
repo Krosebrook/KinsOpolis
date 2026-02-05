@@ -3,304 +3,322 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { MapControls, Environment, Outlines, OrthographicCamera, Float } from '@react-three/drei';
+import React, { useRef, useMemo } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { MapControls, OrthographicCamera, Environment, Float, Sparkles, ContactShadows, MeshWobbleMaterial, Stars } from '@react-three/drei';
 import * as THREE from 'three';
-import { Grid, BuildingType, LensMode, AppSettings, Citizen } from '../types';
-import { GRID_SIZE, BUILDINGS } from '../constants';
-import { computeLandValueMap, computePopulationMap } from '../services/analytics';
+import { Grid, DecorationType, AppSettings, BuildingType } from '../types';
+import { GRID_SIZE, DECORATIONS, BUILDINGS } from '../constants';
 import ProceduralBuilding from './3d/ProceduralBuilding';
-import WeatherSystem from './3d/WeatherSystem';
-import PopulationSystem from './3d/PopulationSystem';
+import WildlifeSystem from './3d/WildlifeSystem';
 
-// --- Constants & Helpers ---
+const boxGeo = new THREE.BoxGeometry(0.95, 0.2, 0.95);
+const cylinderGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8);
 const WORLD_OFFSET = GRID_SIZE / 2 - 0.5;
-const gridToWorld = (x: number, y: number) => [x - WORLD_OFFSET, 0, y - WORLD_OFFSET] as [number, number, number];
-const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-const poleGeo = new THREE.CylinderGeometry(0.05, 0.05, 1);
-const lampGeo = new THREE.SphereGeometry(0.15, 8, 8);
 
-// --- Road Props System ---
-const RoadDetails = React.memo(({ grid, isNight }: { grid: Grid, isNight: boolean }) => {
-    const poleRef = useRef<THREE.InstancedMesh>(null);
-    const lightRef = useRef<THREE.InstancedMesh>(null);
+const Decoration = ({ type, color, isNight }: { type: DecorationType, color: string, isNight: boolean }) => {
+  const meshRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const t = state.clock.elapsedTime;
     
-    // Compute positions only when grid changes
-    const props = useMemo(() => {
-        const items: {x: number, y: number, rot: number}[] = [];
-        grid.forEach((row, y) => row.forEach((tile, x) => {
-            if (tile.buildingType === BuildingType.Road) {
-                // Simple logic: Place lamp if x+y is even (checkerboard) to reduce density
-                if ((x + y) % 3 === 0) {
-                    items.push({ x, y, rot: 0 });
-                }
-            }
-        }));
-        return items;
-    }, [grid]);
+    if (type === DecorationType.Butterfly) {
+      meshRef.current.position.y = 0.5 + Math.sin(t * 5) * 0.1;
+      meshRef.current.rotation.y = t * 2;
+    } else if (type === DecorationType.Cloud) {
+      meshRef.current.position.y = 2 + Math.sin(t * 0.5) * 0.2;
+      meshRef.current.rotation.z = Math.sin(t * 0.2) * 0.05;
+    }
+  });
 
-    useEffect(() => {
-        if (!poleRef.current || !lightRef.current) return;
-        const dummy = new THREE.Object3D();
-        
-        props.forEach((p, i) => {
-            const [wx, _, wz] = gridToWorld(p.x, p.y);
-            // Place on corner of tile roughly
-            dummy.position.set(wx + 0.35, 0, wz + 0.35);
-            dummy.scale.set(1, 1, 1);
-            dummy.updateMatrix();
-            poleRef.current!.setMatrixAt(i, dummy.matrix);
+  if (type === DecorationType.None) return null;
 
-            dummy.position.set(wx + 0.35, 0.5, wz + 0.35);
-            dummy.updateMatrix();
-            lightRef.current!.setMatrixAt(i, dummy.matrix);
-        });
-        
-        poleRef.current.instanceMatrix.needsUpdate = true;
-        lightRef.current.instanceMatrix.needsUpdate = true;
-    }, [props]);
-
-    if (props.length === 0) return null;
-
-    return (
-        <group raycast={() => null}>
-            <instancedMesh ref={poleRef} args={[poleGeo, undefined, props.length]} castShadow receiveShadow>
-                <meshStandardMaterial color="#374151" />
-            </instancedMesh>
-            <instancedMesh ref={lightRef} args={[lampGeo, undefined, props.length]}>
-                <meshStandardMaterial 
-                    color={isNight ? "#fef08a" : "#e5e7eb"} 
-                    emissive={isNight ? "#fef08a" : "#000000"} 
-                    emissiveIntensity={isNight ? 2 : 0} 
-                />
-            </instancedMesh>
-        </group>
-    );
-});
-
-// --- Simplified Ground System (Refactored) ---
-const GroundSystem = React.memo(({ grid, onTileClick, onHover, onLeave, lensMode }: { 
-    grid: Grid, 
-    onTileClick: (x: number, y: number) => void,
-    onHover: (x: number, y: number) => void,
-    onLeave: () => void,
-    lensMode: LensMode 
-}) => {
-    const meshRef = useRef<THREE.InstancedMesh>(null);
-    const count = GRID_SIZE * GRID_SIZE;
-    const dummy = useMemo(() => new THREE.Object3D(), []);
-
-    useEffect(() => {
-        if (!meshRef.current) return;
-        let i = 0;
-        for (let y = 0; y < GRID_SIZE; y++) {
-            for (let x = 0; x < GRID_SIZE; x++) {
-                const [wx, _, wz] = gridToWorld(x, y);
-                dummy.position.set(wx, -0.55, wz);
-                dummy.scale.set(1, 0.5, 1);
-                dummy.updateMatrix();
-                meshRef.current.setMatrixAt(i, dummy.matrix);
-                i++;
-            }
-        }
-        meshRef.current.instanceMatrix.needsUpdate = true;
-    }, [dummy]);
-
-    useEffect(() => {
-        if (!meshRef.current) return;
-        const colors = new Float32Array(count * 3);
-        let dataMap: Float32Array | null = null;
-        if (lensMode === LensMode.LandValue) dataMap = computeLandValueMap(grid);
-        if (lensMode === LensMode.Population) dataMap = computePopulationMap(grid);
-
-        let i = 0;
-        const tempColor = new THREE.Color();
-        
-        for (let y = 0; y < GRID_SIZE; y++) {
-            for (let x = 0; x < GRID_SIZE; x++) {
-                const tile = grid[y][x];
-                const type = tile.buildingType;
-                
-                if (lensMode === LensMode.None) {
-                    const noise = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
-                    
-                    if (type === BuildingType.None) {
-                        const hex = noise > 0.7 ? '#22c55e' : noise > 0.3 ? '#4ade80' : '#86efac';
-                        tempColor.set(hex);
-                    } else if (type === BuildingType.Road) {
-                         // Neighbor check for road styling
-                         let hasInd = false;
-                         let hasRes = false;
-                         // Check 4 neighbors
-                         const dirs = [[0,1], [0,-1], [1,0], [-1,0]];
-                         for(const [dx, dy] of dirs) {
-                             const nx = x + dx, ny = y + dy;
-                             if(nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
-                                 const nt = grid[ny][nx].buildingType;
-                                 if(nt === BuildingType.Industrial) hasInd = true;
-                                 if(nt === BuildingType.Residential) hasRes = true;
-                             }
-                         }
-
-                         if (hasInd) tempColor.set('#4b5563'); // Darker Industrial Road
-                         else if (hasRes) tempColor.set('#9ca3af'); // Lighter Residential Street
-                         else tempColor.set('#334155'); // Standard Highway
-                    } else {
-                        tempColor.set('#d1d5db');
-                    }
-                } else {
-                    const val = dataMap ? dataMap[i] : 0;
-                    if (lensMode === LensMode.LandValue) tempColor.setHSL(0.33, 1, 0.1 + val * 0.6);
-                    else if (lensMode === LensMode.Population) val > 0 ? tempColor.setHSL(0.6 - val * 0.6, 0.8, 0.5) : tempColor.set('#e2e8f0');
-                    else if (lensMode === LensMode.Services) {
-                         tempColor.set('#94a3b8');
-                    }
-                    if (type === BuildingType.Road) tempColor.multiplyScalar(0.5);
-                }
-                
-                colors[i*3] = tempColor.r;
-                colors[i*3+1] = tempColor.g;
-                colors[i*3+2] = tempColor.b;
-                i++;
-            }
-        }
-        meshRef.current.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
-        meshRef.current.instanceColor.needsUpdate = true;
-    }, [grid, count, lensMode]);
-
-    return (
-        <instancedMesh 
-            ref={meshRef} 
-            args={[boxGeo, undefined, count]} 
-            receiveShadow 
-            castShadow
-            onPointerMove={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined) onHover(e.instanceId % GRID_SIZE, Math.floor(e.instanceId / GRID_SIZE));
-            }}
-            onPointerOut={() => onLeave()}
-            onClick={(e) => {
-                e.stopPropagation();
-                if (e.instanceId !== undefined && e.button === 0) onTileClick(e.instanceId % GRID_SIZE, Math.floor(e.instanceId / GRID_SIZE));
-            }}
-        >
-            <meshStandardMaterial roughness={1} flatShading />
-        </instancedMesh>
-    )
-});
-
-const Cursor = ({ x, y, color }: { x: number, y: number, color: string }) => {
-  const [wx, _, wz] = gridToWorld(x, y);
   return (
-    <mesh position={[wx, -0.25, wz]} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial color={color} transparent opacity={0.4} side={THREE.DoubleSide} depthTest={false} />
-      <Outlines thickness={0.05} color="white" />
-    </mesh>
+    <group ref={meshRef}>
+      {type === DecorationType.Tree && (
+        <group position={[0, 0, 0]}>
+          <mesh geometry={cylinderGeo} castShadow receiveShadow position={[0, 0.25, 0]}>
+            <meshStandardMaterial color="#78350f" />
+          </mesh>
+          <mesh castShadow position={[0, 0.6, 0]} scale={[0.4, 0.4, 0.4]}>
+            <dodecahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color={color !== '#f8fafc' ? color : '#22c55e'} />
+          </mesh>
+          <mesh castShadow position={[0, 0.9, 0]} scale={[0.3, 0.3, 0.3]}>
+            <dodecahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color={color !== '#f8fafc' ? color : '#4ade80'} />
+          </mesh>
+        </group>
+      )}
+
+      {type === DecorationType.Flower && (
+         <group>
+            {[0, 1, 2].map(i => {
+                const angle = (i / 3) * Math.PI * 2;
+                const r = 0.2;
+                return (
+                    <group key={i} position={[Math.cos(angle)*r, 0, Math.sin(angle)*r]} rotation={[0, angle, 0]}>
+                         <mesh position={[0, 0.1, 0]} scale={[0.02, 0.2, 0.02]}>
+                             <cylinderGeometry />
+                             <meshStandardMaterial color="#166534" />
+                         </mesh>
+                         <mesh position={[0, 0.25, 0]} scale={0.08}>
+                             <dodecahedronGeometry />
+                             <meshStandardMaterial color={color !== '#f8fafc' ? color : (i===0?'#f472b6':i===1?'#60a5fa':'#fbbf24')} />
+                         </mesh>
+                    </group>
+                )
+            })}
+         </group>
+      )}
+
+      {type === DecorationType.House && (
+          <group position={[0, 0.3, 0]}>
+              <mesh castShadow receiveShadow>
+                  <boxGeometry args={[0.5, 0.4, 0.5]} />
+                  <meshStandardMaterial color={color !== '#f8fafc' ? color : '#fca5a5'} />
+              </mesh>
+              <mesh position={[0, 0.4, 0]} rotation={[0, Math.PI/4, 0]}>
+                   <coneGeometry args={[0.45, 0.4, 4]} />
+                   <meshStandardMaterial color="#be123c" />
+              </mesh>
+              {isNight && (
+                  <pointLight position={[0, 0.2, 0.3]} distance={1} intensity={1} color="orange" />
+              )}
+          </group>
+      )}
+
+      {type === DecorationType.Pond && (
+        <mesh position={[0, 0.05, 0]} rotation={[-Math.PI/2, 0, 0]}>
+           <planeGeometry args={[0.8, 0.8, 8, 8]} />
+           <MeshWobbleMaterial factor={0.5} speed={2} color="#60a5fa" transparent opacity={0.8} />
+        </mesh>
+      )}
+
+      {type === DecorationType.Butterfly && (
+         <group position={[0.3, 0, 0]}>
+             <mesh>
+                 <sphereGeometry args={[0.05]} />
+                 <meshStandardMaterial color={color !== '#f8fafc' ? color : '#e879f9'} emissive={color} emissiveIntensity={0.5} />
+             </mesh>
+         </group>
+      )}
+
+      {type === DecorationType.Cloud && (
+          <group scale={0.5}>
+              <mesh position={[0, 0, 0]}>
+                  <sphereGeometry args={[0.4, 8, 8]} />
+                  <meshStandardMaterial color="white" transparent opacity={0.9} />
+              </mesh>
+              <mesh position={[0.4, 0.1, 0]}>
+                  <sphereGeometry args={[0.3, 8, 8]} />
+                  <meshStandardMaterial color="white" transparent opacity={0.9} />
+              </mesh>
+               <mesh position={[-0.4, 0.05, 0]}>
+                  <sphereGeometry args={[0.35, 8, 8]} />
+                  <meshStandardMaterial color="white" transparent opacity={0.9} />
+              </mesh>
+          </group>
+      )}
+    </group>
   );
 };
 
-interface IsoMapProps {
-  grid: Grid;
-  onTileClick: (x: number, y: number) => void;
-  hoveredTool: BuildingType;
-  population: number;
-  celebrate?: boolean;
-  lensMode: LensMode;
-  settings?: AppSettings; 
-  onCitizenClick: (c: Citizen) => void;
-}
+// Procedural roadside details like streetlights and barriers
+const RoadsideDetails = ({ type, x, y, isNight }: { type: BuildingType, x: number, y: number, isNight?: boolean }) => {
+  if (type !== BuildingType.Highway) return null;
 
-const IsoMap: React.FC<IsoMapProps> = ({ grid, onTileClick, hoveredTool, population, celebrate = false, lensMode, settings, onCitizenClick }) => {
-  const [hoveredTile, setHoveredTile] = useState<{x: number, y: number} | null>(null);
+  const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
+  const rotation = Math.floor(hash * 4) * (Math.PI / 2);
 
-  const handleHover = useCallback((x: number, y: number) => setHoveredTile({ x, y }), []);
-  const handleLeave = useCallback(() => setHoveredTile(null), []);
-
-  const showPreview = hoveredTile && grid[hoveredTile.y][hoveredTile.x].buildingType === BuildingType.None && hoveredTool !== BuildingType.None;
-  const previewColor = showPreview ? BUILDINGS[hoveredTool].color : 'white';
-  const isBulldoze = hoveredTool === BuildingType.None;
-  const previewPos = hoveredTile ? gridToWorld(hoveredTile.x, hoveredTile.y) : [0,0,0];
-  const shadowsEnabled = !settings?.lowGraphics;
-  const shadowMapSize = settings?.shadowDetail === 'high' ? 4096 : (settings?.shadowDetail === 'medium' ? 2048 : 1024);
-  const isNight = settings?.isNight ?? false;
+  if (hash > 0.7) return null;
 
   return (
-    <div className={`absolute inset-0 touch-none transition-colors duration-1000 ${isNight ? 'bg-slate-900' : 'bg-sky-400'}`}>
-      <Canvas shadows={shadowsEnabled} dpr={settings?.lowGraphics ? 0.75 : [1, 1.5]} gl={{ antialias: !settings?.lowGraphics }}>
-        <OrthographicCamera makeDefault zoom={20} position={[50, 50, 50]} near={-200} far={1000} />
-        <MapControls enableRotate={true} enableZoom={true} minZoom={5} maxZoom={100} maxPolarAngle={Math.PI / 2.2} minPolarAngle={0.1} target={[0,-0.5,0]} />
-
-        <ambientLight intensity={isNight ? 0.1 : 0.6} color={isNight ? "#1e293b" : "#cceeff"} />
-        <directionalLight
-          castShadow={shadowsEnabled}
-          position={[30, 50, 20]}
-          intensity={isNight ? 0.2 : 1.8}
-          color={isNight ? "#3b82f6" : "#fffbeb"}
-          shadow-mapSize={[shadowMapSize, shadowMapSize]}
-          shadow-camera-left={-80} shadow-camera-right={80}
-          shadow-camera-top={80} shadow-camera-bottom={-80}
-        />
-        {!isNight && <Environment preset="park" />}
-
-        <WeatherSystem type={settings?.weather || 'sunny'} />
-
-        <group>
-          <GroundSystem grid={grid} onTileClick={onTileClick} onHover={handleHover} onLeave={handleLeave} lensMode={lensMode} />
-          <RoadDetails grid={grid} isNight={isNight} />
-          
-          {grid.map((row, y) =>
-            row.map((tile, x) => {
-              if (tile.buildingType !== BuildingType.None && tile.buildingType !== BuildingType.Road) {
-                  const [wx, _, wz] = gridToWorld(x, y);
-                  return (
-                    <group key={`${x}-${y}`} position={[wx, 0, wz]} raycast={() => null}>
-                      <ProceduralBuilding 
-                        type={tile.buildingType} 
-                        baseColor={BUILDINGS[tile.buildingType].color} 
-                        x={x} y={y} 
-                        level={tile.level}
-                        isNight={isNight}
-                      />
-                    </group>
-                  )
-              }
-              return null;
-            })
-          )}
-
-          <group raycast={() => null}>
-             <PopulationSystem 
-                grid={grid} 
-                population={population} 
-                onCitizenClick={onCitizenClick} 
-                interactionDisabled={hoveredTool !== BuildingType.None}
-             />
-
-            {showPreview && hoveredTile && (
-              <group position={[previewPos[0], 0, previewPos[2]]}>
-                <Float speed={3} rotationIntensity={0} floatIntensity={0.1} floatingRange={[0, 0.1]}>
-                  <ProceduralBuilding 
-                    type={hoveredTool} 
-                    baseColor={previewColor} 
-                    x={hoveredTile.x} 
-                    y={hoveredTile.y} 
-                    transparent 
-                    opacity={0.7} 
-                  />
-                </Float>
-              </group>
-            )}
-
-            {hoveredTile && (
-              <Cursor x={hoveredTile.x} y={hoveredTile.y} color={isBulldoze ? '#ef4444' : (showPreview ? '#ffffff' : '#000000')} />
-            )}
-          </group>
+    <group rotation={[0, rotation, 0]} position={[0, 0, 0]}>
+      {/* Streetlight */}
+      {hash < 0.15 && (
+        <group position={[0.45, 0, 0]}>
+           <mesh position={[0, 0.5, 0]} castShadow>
+               <cylinderGeometry args={[0.05, 0.05, 1, 8]} />
+               <meshStandardMaterial color="#475569" />
+           </mesh>
+           <mesh position={[-0.2, 0.9, 0]} rotation={[0, 0, Math.PI/4]}>
+               <boxGeometry args={[0.4, 0.05, 0.05]} />
+               <meshStandardMaterial color="#475569" />
+           </mesh>
+           <mesh position={[-0.35, 0.8, 0]}>
+               <sphereGeometry args={[0.1, 8, 8]} />
+               <meshStandardMaterial color="#fcd34d" emissive="#fcd34d" emissiveIntensity={isNight ? 2 : 0.5} />
+           </mesh>
+           {isNight && <pointLight position={[-0.35, 0.7, 0]} distance={3} intensity={2} color="#fcd34d" />}
         </group>
+      )}
+
+      {/* Road Barrier */}
+      {hash > 0.4 && hash < 0.7 && (
+         <mesh position={[-0.45, 0.15, 0]} castShadow>
+            <boxGeometry args={[0.1, 0.3, 0.8]} />
+            <meshStandardMaterial color="#cbd5e1" roughness={0.5} />
+         </mesh>
+      )}
+    </group>
+  );
+};
+
+const GroundSystem = ({ color, buildingType, onClick, onPointerOver, onPointerOut }: any) => {
+    const isHighway = buildingType === BuildingType.Highway;
+    const isRoad = buildingType === BuildingType.Road;
+    const isPark = buildingType === BuildingType.Park;
+    const isIndustrial = buildingType === BuildingType.Industrial;
+
+    const materialColor = useMemo(() => {
+        if (isHighway) return '#1e293b'; 
+        if (isRoad) return '#334155'; 
+        if (isIndustrial) return '#94a3b8';
+        if (isPark) return '#dcfce7'; 
+        return color;
+    }, [color, isHighway, isRoad, isIndustrial, isPark]);
+
+    return (
+        <group onClick={onClick} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
+            <mesh receiveShadow castShadow geometry={boxGeo}>
+                <meshStandardMaterial color={materialColor} roughness={1} />
+            </mesh>
+            
+            {/* Highway Thicker Base */}
+            {isHighway && (
+                 <mesh position={[0, -0.15, 0]} receiveShadow>
+                     <boxGeometry args={[1, 0.1, 1]} />
+                     <meshStandardMaterial color="#0f172a" />
+                 </mesh>
+            )}
+
+            {/* Road curbs/sidewalks */}
+            {(isRoad || isHighway) && (
+                <>
+                     <mesh position={[0.48, 0.11, 0]} receiveShadow>
+                         <boxGeometry args={[0.04, 0.02, 1]} />
+                         <meshStandardMaterial color="#cbd5e1" />
+                     </mesh>
+                     <mesh position={[-0.48, 0.11, 0]} receiveShadow>
+                         <boxGeometry args={[0.04, 0.02, 1]} />
+                         <meshStandardMaterial color="#cbd5e1" />
+                     </mesh>
+                </>
+            )}
+        </group>
+    );
+};
+
+const Tile = ({ x, y, color, decoration, buildingType, onClick, settings }: any) => {
+  const handleClick = (e: THREE.Event) => {
+    e.stopPropagation();
+    if (typeof x === 'number' && typeof y === 'number') onClick(x, y);
+  };
+
+  return (
+    <group position={[x - WORLD_OFFSET, 0, y - WORLD_OFFSET]}>
+      <GroundSystem 
+        color={color} 
+        buildingType={buildingType} 
+        onClick={handleClick}
+        onPointerOver={(e: any) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; }}
+        onPointerOut={() => { document.body.style.cursor = 'default'; }}
+      />
+      
+      <Decoration type={decoration} color={color} isNight={settings.isNight} />
+      <RoadsideDetails type={buildingType} x={x} y={y} isNight={settings.isNight} />
+      
+      {buildingType !== BuildingType.None && (
+        <ProceduralBuilding 
+          type={buildingType} 
+          baseColor={BUILDINGS[buildingType].color} 
+          x={x} 
+          y={y} 
+          isNight={settings.isNight} 
+        />
+      )}
+    </group>
+  );
+};
+
+const IsoMap = ({ grid, onTileClick, settings }: { grid: Grid, onTileClick: (x: number, y: number) => void, settings: AppSettings }) => {
+  const tiles = useMemo(() => {
+    return grid.map((row, y) => 
+      row.map((tile, x) => (
+        <Tile key={`${x}-${y}`} {...tile} onClick={onTileClick} settings={settings} />
+      ))
+    );
+  }, [grid, onTileClick, settings]);
+
+  const shadowsEnabled = settings.shadowDetail !== 'low';
+  const shadowMapSize = settings.shadowDetail === 'high' ? 2048 : 512;
+  const bgColor = settings.isNight ? '#020617' : '#cffafe';
+  
+  return (
+    <div className="w-full h-full transition-colors duration-1000" style={{ backgroundColor: bgColor }}>
+      <Canvas 
+        shadows={shadowsEnabled}
+        gl={{ antialias: true, alpha: true }}
+        onCreated={({ gl }) => {
+          gl.setClearColor(new THREE.Color(bgColor));
+        }}
+      >
+        <OrthographicCamera makeDefault zoom={40} position={[20, 20, 20]} near={0.1} far={1000} />
+        <MapControls enableRotate={false} enableZoom={true} minZoom={20} maxZoom={100} />
+        
+        {settings.isNight ? (
+            <>
+                <ambientLight intensity={0.2} />
+                <directionalLight 
+                    position={[10, 20, 5]} 
+                    intensity={0.5} 
+                    color="#818cf8"
+                    castShadow={shadowsEnabled}
+                    shadow-mapSize={[shadowMapSize, shadowMapSize]}
+                    shadow-camera-left={-20}
+                    shadow-camera-right={20}
+                    shadow-camera-top={20}
+                    shadow-camera-bottom={-20}
+                />
+                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+                <fog attach="fog" args={['#020617', 20, 100]} />
+            </>
+        ) : (
+            <>
+                <ambientLight intensity={settings.highContrast ? 1.5 : 0.8} />
+                <directionalLight 
+                    position={[10, 20, 10]} 
+                    intensity={1.5} 
+                    castShadow={shadowsEnabled}
+                    shadow-mapSize={[shadowMapSize, shadowMapSize]}
+                    shadow-camera-left={-20}
+                    shadow-camera-right={20}
+                    shadow-camera-top={20}
+                    shadow-camera-bottom={-20}
+                />
+                <Environment preset="city" />
+            </>
+        )}
+        
+        <group>{tiles}</group>
+        <WildlifeSystem grid={grid} />
+        
+        {settings.weather !== 'sunny' && settings.weather !== 'rainbow' && settings.weather !== 'glitter' && (
+            <WeatherSystem type={settings.weather as 'rain'|'snow'} />
+        )}
+
+        {settings.weather === 'glitter' && (
+          <Sparkles count={400} scale={20} size={6} speed={0.4} color="#ffd700" raycast={() => null} />
+        )}
+        
+        {/* Simple ground plane reflection/shadow catch */}
+        <ContactShadows position={[0, -0.11, 0]} opacity={0.4} scale={30} blur={2} far={1} resolution={512} color="#000000" />
       </Canvas>
     </div>
   );
 };
 
+import WeatherSystem from './3d/WeatherSystem';
 export default IsoMap;

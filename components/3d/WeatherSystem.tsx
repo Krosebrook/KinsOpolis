@@ -13,7 +13,7 @@ interface WeatherProps {
 }
 
 const WeatherSystem: React.FC<WeatherProps> = ({ type }) => {
-    const count = type === 'rain' ? 2000 : (type === 'snow' ? 1000 : 0);
+    const count = type === 'rain' ? 3000 : (type === 'snow' ? 1500 : 0);
     const mesh = useRef<THREE.InstancedMesh>(null);
     const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -23,7 +23,8 @@ const WeatherSystem: React.FC<WeatherProps> = ({ type }) => {
             y: Math.random() * 20,
             z: Math.random() * GRID_SIZE - GRID_SIZE/2,
             speed: Math.random() * 0.2 + 0.1,
-            drift: Math.random() * 0.05 - 0.02
+            drift: Math.random() * 0.05 - 0.02,
+            offset: Math.random() * Math.PI
         }));
     }, [count, type]);
 
@@ -39,12 +40,17 @@ const WeatherSystem: React.FC<WeatherProps> = ({ type }) => {
         mesh.current.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
     }, [count, type]);
 
-    useFrame(() => {
+    useFrame((state) => {
         if (!mesh.current || count === 0) return;
         
         particles.forEach((p, i) => {
             p.y -= p.speed;
-            p.x += p.drift;
+            if (type === 'snow') {
+                p.x += Math.sin(state.clock.elapsedTime + p.offset) * 0.02; // Sway
+            } else {
+                p.x += p.drift; // Rain drift
+            }
+
             if (p.y < 0) {
                 p.y = 20;
                 p.x = Math.random() * GRID_SIZE - GRID_SIZE/2;
@@ -53,9 +59,9 @@ const WeatherSystem: React.FC<WeatherProps> = ({ type }) => {
             
             dummy.position.set(p.x, p.y, p.z);
             if (type === 'rain') {
-                dummy.scale.set(0.05, 0.4, 0.05);
+                dummy.scale.set(0.03, 0.6, 0.03);
             } else {
-                dummy.scale.set(0.1, 0.1, 0.1);
+                dummy.scale.set(0.12, 0.12, 0.12);
             }
             dummy.updateMatrix();
             mesh.current!.setMatrixAt(i, dummy.matrix);

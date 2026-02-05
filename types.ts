@@ -3,79 +3,76 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
+export enum DecorationType {
+  None = 'None',
+  Flower = 'Flower',
+  Tree = 'Tree',
+  House = 'House',
+  Pond = 'Pond',
+  Butterfly = 'Butterfly',
+  Cloud = 'Cloud'
+}
+
 export enum BuildingType {
   None = 'None',
-  Road = 'Road',
   Residential = 'Residential',
   Commercial = 'Commercial',
   Industrial = 'Industrial',
+  Road = 'Road',
+  Highway = 'Highway',
   Park = 'Park',
   Police = 'Police',
-  School = 'School',
-}
-
-export interface BuildingConfig {
-  type: BuildingType;
-  cost: number;
-  name: string;
-  description: string;
-  color: string; // Main color for 3D material
-  popGen: number; // Population generation per tick
-  incomeGen: number; // Money generation per tick
-  range?: number; // Effect radius
+  School = 'School'
 }
 
 export interface TileData {
   x: number;
   y: number;
+  color: string;
+  decoration: DecorationType;
   buildingType: BuildingType;
-  variant?: number;
-  level?: number; // 1 = Basic, 2 = Medium, 3 = High
+  animated?: boolean;
 }
 
 export type Grid = TileData[][];
 
+export interface AppSettings {
+  volume: number;
+  highContrast: boolean;
+  narrator: boolean;
+  weather: 'sunny' | 'rainbow' | 'glitter' | 'rain' | 'snow';
+  lowGraphics?: boolean;
+  shadowDetail?: 'low' | 'medium' | 'high';
+  isNight?: boolean;
+  ambience: boolean;
+}
+
+export interface GroundingChunk {
+  web?: { uri: string; title: string };
+  maps?: { uri: string; title: string };
+}
+
+export interface AIResponse {
+  text: string;
+  groundingChunks?: GroundingChunk[];
+}
+
 export interface CityStats {
-  money: number;
   population: number;
+  money: number;
   day: number;
+  happiness: number;
 }
 
 export interface AIGoal {
+  title: string;
   description: string;
-  targetType: 'population' | 'money' | 'building_count';
-  targetValue: number;
-  buildingType?: BuildingType; // If target is building_count
-  reward: number;
-  completed: boolean;
 }
 
 export interface NewsItem {
   id: string;
   text: string;
-  type: 'positive' | 'negative' | 'neutral';
-}
-
-export enum LensMode {
-  None = 'None',
-  LandValue = 'LandValue',
-  Population = 'Population',
-  Services = 'Services', // New lens
-}
-
-export interface CityAnalysis {
-  grade: string;
-  title: string;
-  advice: string;
-}
-
-export interface AppSettings {
-  volume: number; // 0.0 to 1.0
-  lowGraphics: boolean; // Disables shadows/effects
-  shadowDetail: 'low' | 'medium' | 'high'; // New setting
-  showTutorial: boolean;
-  weather: 'sunny' | 'rain' | 'snow'; // New setting
-  isNight: boolean; // New setting (debug/manual toggle or auto)
+  date?: number;
 }
 
 export interface SaveMetadata {
@@ -86,16 +83,46 @@ export interface SaveMetadata {
   money: number;
 }
 
+export interface CityAnalysis {
+  grade: string;
+  title: string;
+  advice: string;
+}
+
+export enum LensMode {
+  None = 'None',
+  LandValue = 'LandValue',
+  Population = 'Population'
+}
+
 export interface Citizen {
-    id: string;
-    x: number;
-    y: number;
-    color: string;
+  id: string;
+  x: number;
+  y: number;
+  color: string;
 }
 
 export interface CitizenThought {
-    name: string;
-    job: string;
-    thought: string;
-    mood: 'happy' | 'angry' | 'neutral';
+  name: string;
+  job: string;
+  thought: string;
+  mood: 'happy' | 'angry' | 'neutral';
+}
+
+// --- Component Props Interfaces ---
+
+export interface ProceduralBuildingProps {
+  type: BuildingType;
+  baseColor: string;
+  x: number;
+  y: number;
+  level?: number;
+  opacity?: number;
+  transparent?: boolean;
+  isNight?: boolean;
+}
+
+export interface TileProps extends TileData {
+  onClick: (x: number, y: number) => void;
+  settings: AppSettings;
 }

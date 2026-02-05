@@ -1,5 +1,9 @@
 {
-  "name": "Sky Metropolis",
-  "description": "Manage a virtual metropolis and fulfill tasks provided by Gemini.",
-  "requestFramePermissions": []
+  "name": "Living Coloring World",
+  "description": "A magical AI-powered creative sandbox for children.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
 }
