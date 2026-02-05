@@ -31,6 +31,7 @@ export interface TileData {
   color: string;
   decoration: DecorationType;
   buildingType: BuildingType;
+  level: number; // Added for building upgrades
   animated?: boolean;
 }
 
@@ -62,6 +63,18 @@ export interface CityStats {
   money: number;
   day: number;
   happiness: number;
+}
+
+export interface Quest {
+  id: string;
+  title: string;
+  description: string;
+  targetValue: number;
+  currentValue: number;
+  type: 'build' | 'population' | 'money';
+  targetKey?: BuildingType;
+  rewardMoney: number;
+  completed: boolean;
 }
 
 export interface AIGoal {
@@ -100,6 +113,7 @@ export interface Citizen {
   x: number;
   y: number;
   color: string;
+  path?: {x: number, y: number}[];
 }
 
 export interface CitizenThought {

@@ -3,7 +3,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-import { Grid, CityStats, AIGoal, NewsItem, SaveMetadata } from '../types';
+import { Grid, CityStats, AIGoal, NewsItem, SaveMetadata, Quest } from '../types';
 import { GRID_SIZE } from '../constants';
 
 const META_KEY = 'sky_city_meta';
@@ -12,6 +12,7 @@ const SAVE_PREFIX = 'sky_city_save_';
 export interface SaveData {
   grid: Grid;
   stats: CityStats;
+  quests: Quest[];
   goal: AIGoal | null;
   news: NewsItem[];
   gameStarted: boolean;

@@ -183,51 +183,68 @@ const GroundSystem = ({ color, buildingType, onClick, onPointerOver, onPointerOu
     const isIndustrial = buildingType === BuildingType.Industrial;
 
     const materialColor = useMemo(() => {
-        if (isHighway) return '#1e293b'; // Asphalt Dark
-        if (isRoad) return '#334155'; // City Street Grey
-        if (isIndustrial) return '#475569'; // Worn industrial asphalt
+        if (isHighway) return '#0f172a'; // Deep Navy Asphalt
+        if (isRoad) return '#334155'; // Standard Grey
+        if (isIndustrial) return '#475569'; // Gritty/Dirty Asphalt
         if (isPark) return '#dcfce7'; 
         return color;
     }, [color, isHighway, isRoad, isIndustrial, isPark]);
 
     return (
         <group onClick={onClick} onPointerOver={onPointerOver} onPointerOut={onPointerOut}>
-            <mesh receiveShadow castShadow geometry={boxGeo}>
+            <mesh receiveShadow castShadow position={[0, isHighway ? 0.02 : 0, 0]}>
+                <boxGeometry args={[0.95, isHighway ? 0.24 : 0.2, 0.95]} />
                 <meshStandardMaterial color={materialColor} roughness={1} />
             </mesh>
             
-            {/* Unique Highway Styling */}
             {isHighway && (
                  <>
-                    <mesh position={[0, 0.11, 0]} receiveShadow>
-                        <planeGeometry args={[0.05, 1]} />
+                    <mesh position={[-0.05, 0.141, 0]} receiveShadow>
+                        <planeGeometry args={[0.03, 1]} rotation={[-Math.PI / 2, 0, 0]} />
+                        <meshStandardMaterial color="#eab308" emissive="#eab308" emissiveIntensity={0.2} />
+                    </mesh>
+                    <mesh position={[0.05, 0.141, 0]} receiveShadow>
+                        <planeGeometry args={[0.03, 1]} rotation={[-Math.PI / 2, 0, 0]} />
                         <meshStandardMaterial color="#eab308" emissive="#eab308" emissiveIntensity={0.2} />
                     </mesh>
                     <mesh position={[0, -0.15, 0]} receiveShadow>
                         <boxGeometry args={[1, 0.1, 1]} />
-                        <meshStandardMaterial color="#0f172a" />
+                        <meshStandardMaterial color="#020617" />
                     </mesh>
                  </>
             )}
 
-            {/* Industrial Texture (Simple line pattern) */}
             {isIndustrial && (
-                <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                    <planeGeometry args={[0.95, 0.95]} />
-                    <meshStandardMaterial color="#475569" roughness={1} metalness={0.1} />
+                <group position={[0, 0.101, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <mesh receiveShadow>
+                        <planeGeometry args={[0.9, 0.9]} />
+                        <meshStandardMaterial color="#475569" roughness={1} metalness={0.1} />
+                    </mesh>
+                    {[ -0.3, 0.3 ].map(ox => (
+                        <mesh key={ox} position={[ox, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
+                            <planeGeometry args={[0.05, 0.4]} />
+                            <meshStandardMaterial color="#cbd5e1" transparent opacity={0.5} />
+                        </mesh>
+                    ))}
+                </group>
+            )}
+
+            {isRoad && (
+                <mesh position={[0, 0.101, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                    <planeGeometry args={[0.05, 0.6]} />
+                    <meshStandardMaterial color="#cbd5e1" transparent opacity={0.8} />
                 </mesh>
             )}
 
-            {/* Road curbs/sidewalks */}
             {(isRoad || isHighway || isIndustrial) && (
                 <>
-                     <mesh position={[0.48, 0.11, 0]} receiveShadow>
-                         <boxGeometry args={[0.04, 0.02, 1]} />
-                         <meshStandardMaterial color="#cbd5e1" />
+                     <mesh position={[0.48, isHighway ? 0.12 : 0.1, 0]} receiveShadow>
+                         <boxGeometry args={[0.04, 0.03, 1]} />
+                         <meshStandardMaterial color={isHighway ? "#94a3b8" : "#cbd5e1"} />
                      </mesh>
-                     <mesh position={[-0.48, 0.11, 0]} receiveShadow>
-                         <boxGeometry args={[0.04, 0.02, 1]} />
-                         <meshStandardMaterial color="#cbd5e1" />
+                     <mesh position={[-0.48, isHighway ? 0.12 : 0.1, 0]} receiveShadow>
+                         <boxGeometry args={[0.04, 0.03, 1]} />
+                         <meshStandardMaterial color={isHighway ? "#94a3b8" : "#cbd5e1"} />
                      </mesh>
                 </>
             )}
@@ -235,9 +252,23 @@ const GroundSystem = ({ color, buildingType, onClick, onPointerOver, onPointerOu
     );
 };
 
-const Tile = ({ x, y, color, decoration, buildingType, onClick, settings }: any) => {
+const Tile = ({ x, y, color, decoration, buildingType, onClick, settings, activeTool, setActiveTool, grid }: any) => {
   const handleClick = (e: THREE.Event) => {
     e.stopPropagation();
+    
+    // Intelligent road tile interaction refinement
+    if (buildingType === BuildingType.Road) {
+       if (activeTool !== BuildingType.Road && activeTool !== BuildingType.Highway && activeTool !== BuildingType.None) {
+          // Auto-select road tool if user clicks existing road without an active building tool
+          setActiveTool(BuildingType.Road);
+          return;
+       } else if (activeTool === BuildingType.Highway) {
+          // If Highway tool is selected, upgrade the road segment immediately
+          onClick(x, y);
+          return;
+       }
+    }
+
     if (typeof x === 'number' && typeof y === 'number') onClick(x, y);
   };
 
@@ -260,6 +291,7 @@ const Tile = ({ x, y, color, decoration, buildingType, onClick, settings }: any)
           baseColor={BUILDINGS[buildingType].color} 
           x={x} 
           y={y} 
+          level={grid[y][x].level}
           isNight={settings.isNight} 
         />
       )}
@@ -273,16 +305,26 @@ interface IsoMapProps {
   settings: AppSettings;
   explosions: { id: string; x: number; y: number; type: BuildingType }[];
   onExplosionComplete: (id: string) => void;
+  activeTool: any;
+  setActiveTool: (tool: any) => void;
 }
 
-const IsoMap = ({ grid, onTileClick, settings, explosions = [], onExplosionComplete }: IsoMapProps) => {
+const IsoMap = ({ grid, onTileClick, settings, explosions = [], onExplosionComplete, activeTool, setActiveTool }: IsoMapProps) => {
   const tiles = useMemo(() => {
     return grid.map((row, y) => 
       row.map((tile, x) => (
-        <Tile key={`${x}-${y}`} {...tile} onClick={onTileClick} settings={settings} />
+        <Tile 
+          key={`${x}-${y}`} 
+          {...tile} 
+          grid={grid}
+          onClick={onTileClick} 
+          settings={settings} 
+          activeTool={activeTool}
+          setActiveTool={setActiveTool}
+        />
       ))
     );
-  }, [grid, onTileClick, settings]);
+  }, [grid, onTileClick, settings, activeTool, setActiveTool]);
 
   const shadowsEnabled = settings.shadowDetail !== 'low';
   const shadowMapSize = settings.shadowDetail === 'high' ? 2048 : 512;

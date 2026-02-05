@@ -28,13 +28,15 @@ function App() {
   const {
     grid,
     stats,
+    quests,
     currentSlotId,
     loadSlot,
     handleTileClick,
     handleUndo,
     handleRedo,
     canUndo,
-    canRedo
+    canRedo,
+    calculateBuildingCost
   } = useGameState();
 
   const [aiEnabled, setAiEnabled] = useState(true);
@@ -64,7 +66,6 @@ function App() {
     ambience: true
   });
 
-  // Cleanup on unmount or slot change
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
@@ -100,7 +101,6 @@ function App() {
   const handleMagicAction = async (prompt: string, type: 'gen' | 'edit' | 'search' | 'maps') => {
     if (!prompt.trim()) return;
     
-    // Cancel any existing request
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
 
@@ -115,7 +115,6 @@ function App() {
         }
       }
       
-      let resText = "";
       if (type === 'gen') {
         setLoadingMessage("Gemini is painting a masterpiece...");
         const imageUrl = await generateImage(prompt);
@@ -160,13 +159,21 @@ function App() {
           settings={settings}
           explosions={explosions}
           onExplosionComplete={removeExplosion}
+          activeTool={selectedTool}
+          setActiveTool={setSelectedTool}
         />
       </Suspense>
 
       <UIOverlay 
-        grid={grid} stats={stats} activeCategory={activeCategory} setActiveCategory={setActiveCategory}
-        selectedColor={selectedColor} setSelectedColor={setSelectedColor}
-        selectedTool={selectedTool} setSelectedTool={setSelectedTool}
+        grid={grid} 
+        stats={stats} 
+        quests={quests}
+        activeCategory={activeCategory} 
+        setActiveCategory={setActiveCategory}
+        selectedColor={selectedColor} 
+        setSelectedColor={setSelectedColor}
+        selectedTool={selectedTool} 
+        setSelectedTool={setSelectedTool}
         onMagicAction={handleMagicAction}
         onAnimate={async () => {
           setIsGenerating(true);
@@ -188,6 +195,7 @@ function App() {
         aiResponse={aiResponse} isGenerating={isGenerating}
         onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo}
         onOpenSettings={() => setShowSettings(true)}
+        getDynamicCost={(type) => calculateBuildingCost(type, 0, 0)} // Basic approximation for UI
       />
 
       {showSettings && <SettingsModal settings={settings} onUpdate={setSettings} onClose={() => setShowSettings(false)} />}

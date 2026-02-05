@@ -5,7 +5,7 @@
 */
 import { DecorationType, BuildingType } from './types';
 
-export const GRID_SIZE = 20; // Smaller, more focusable grid for kids
+export const GRID_SIZE = 20; 
 export const TICK_RATE_MS = 3000;
 
 export const PALETTE = [
@@ -23,14 +23,25 @@ export const DECORATIONS: Record<DecorationType, { name: string, icon: string, c
   [DecorationType.Cloud]: { name: 'Cloud', icon: '☁️', color: '#FFFFFC' },
 };
 
-export const BUILDINGS: Record<BuildingType, { name: string, icon: string, color: string, cost: number, pop: number, income: number, desc: string }> = {
-  [BuildingType.None]: { name: 'Bulldoze', icon: '🚜', color: '#f1f5f9', cost: 0, pop: 0, income: 0, desc: 'Clear land.' },
-  [BuildingType.Residential]: { name: 'House', icon: '🏠', color: '#60a5fa', cost: 100, pop: 4, income: 0, desc: 'Families live here.' },
-  [BuildingType.Commercial]: { name: 'Shop', icon: '🛒', color: '#fbbf24', cost: 200, pop: 0, income: 15, desc: 'Shops earn money.' },
-  [BuildingType.Industrial]: { name: 'Factory', icon: '🏭', color: '#94a3b8', cost: 300, pop: 0, income: 25, desc: 'Big money, bit messy.' },
-  [BuildingType.Road]: { name: 'Road', icon: '🛣️', color: '#334155', cost: 50, pop: 0, income: 0, desc: 'Connects buildings.' },
-  [BuildingType.Highway]: { name: 'Highway', icon: '🏎️', color: '#1e293b', cost: 150, pop: 0, income: 0, desc: 'Fast travel road.' },
-  [BuildingType.Park]: { name: 'Park', icon: '🌳', color: '#4ade80', cost: 150, pop: 0, income: 0, desc: 'Makes people happy.' },
-  [BuildingType.Police]: { name: 'Police', icon: '🚓', color: '#1e40af', cost: 500, pop: 0, income: 0, desc: 'Keeps city safe.' },
-  [BuildingType.School]: { name: 'School', icon: '🏫', color: '#f87171', cost: 400, pop: 0, income: 0, desc: 'For learning.' },
+export interface BuildingInfo {
+  name: string;
+  icon: string;
+  color: string;
+  baseCost: number;
+  pop: number;
+  income: number;
+  desc: string;
+  scalingFactor: number; // Factor for cost increase based on existing count
+}
+
+export const BUILDINGS: Record<BuildingType, BuildingInfo> = {
+  [BuildingType.None]: { name: 'Bulldoze', icon: '🚜', color: '#f1f5f9', baseCost: 0, pop: 0, income: 0, desc: 'Clear land.', scalingFactor: 0 },
+  [BuildingType.Residential]: { name: 'House', icon: '🏠', color: '#60a5fa', baseCost: 100, pop: 4, income: 0, desc: 'Families live here.', scalingFactor: 1.1 },
+  [BuildingType.Commercial]: { name: 'Shop', icon: '🛒', color: '#fbbf24', baseCost: 200, pop: 0, income: 15, desc: 'Shops earn money.', scalingFactor: 1.2 },
+  [BuildingType.Industrial]: { name: 'Factory', icon: '🏭', color: '#94a3b8', baseCost: 300, pop: 0, income: 25, desc: 'Big money, bit messy.', scalingFactor: 1.25 },
+  [BuildingType.Road]: { name: 'Road', icon: '🛣️', color: '#334155', baseCost: 50, pop: 0, income: 0, desc: 'Connects buildings.', scalingFactor: 1.05 },
+  [BuildingType.Highway]: { name: 'Highway', icon: '🏎️', color: '#1e293b', baseCost: 150, pop: 0, income: 0, desc: 'Fast travel road.', scalingFactor: 1.1 },
+  [BuildingType.Park]: { name: 'Park', icon: '🌳', color: '#4ade80', baseCost: 150, pop: 0, income: 0, desc: 'Makes people happy.', scalingFactor: 1.15 },
+  [BuildingType.Police]: { name: 'Police', icon: '🚓', color: '#1e40af', baseCost: 500, pop: 0, income: 0, desc: 'Keeps city safe.', scalingFactor: 1.5 },
+  [BuildingType.School]: { name: 'School', icon: '🏫', color: '#f87171', baseCost: 400, pop: 0, income: 0, desc: 'For learning.', scalingFactor: 1.4 },
 };

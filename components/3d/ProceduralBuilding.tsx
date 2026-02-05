@@ -64,7 +64,7 @@ const Fence = ({ position }: { position: [number, number, number] }) => (
     </group>
 );
 
-const Billboard = ({ position, rotation, animated = false }: { position: [number, number, number], rotation?: [number, number, number], animated?: boolean }) => {
+const Billboard = ({ position, rotation, animated = false, color = "#fef08a", scale = [1, 1, 1] }: { position: [number, number, number], rotation?: [number, number, number], animated?: boolean, color?: string, scale?: [number, number, number] }) => {
     const groupRef = useRef<THREE.Group>(null);
     useFrame((state) => {
         if (animated && groupRef.current) {
@@ -73,11 +73,11 @@ const Billboard = ({ position, rotation, animated = false }: { position: [number
     });
 
     return (
-        <group position={position} rotation={rotation ? new THREE.Euler(...rotation) : new THREE.Euler(0, 0, 0)}>
+        <group position={position} rotation={rotation ? new THREE.Euler(...rotation) : new THREE.Euler(0, 0, 0)} scale={scale}>
             <group ref={groupRef}>
                 <mesh position={[0, 0.25, 0]} scale={[0.8, 0.4, 0.05]}>
                     <boxGeometry />
-                    <meshStandardMaterial color="#fef08a" emissive="#fef08a" emissiveIntensity={0.5} />
+                    <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} />
                 </mesh>
             </group>
             <mesh position={[0, -0.1, 0]} scale={[0.1, 0.3, 0.05]}>
@@ -88,7 +88,7 @@ const Billboard = ({ position, rotation, animated = false }: { position: [number
     );
 };
 
-const AnimatedSmoke = ({ position }: { position: [number, number, number] }) => {
+const AnimatedSmoke = ({ position, color = "#cbd5e1" }: { position: [number, number, number], color?: string }) => {
     const ref = useRef<THREE.Group>(null);
     useFrame((state) => {
         if (!ref.current) return;
@@ -109,24 +109,25 @@ const AnimatedSmoke = ({ position }: { position: [number, number, number] }) => 
             {[0, 1, 2].map(i => (
                 <mesh key={i} position={[0, 0, 0]}>
                     <sphereGeometry args={[0.2, 8, 8]} />
-                    <meshBasicMaterial color="#cbd5e1" transparent opacity={0.5} />
+                    <meshBasicMaterial color={color} transparent opacity={0.5} />
                 </mesh>
             ))}
         </group>
     );
 };
 
-const SmokeStack = ({ position, style }: { position: [number, number, number], style: number }) => (
+const SmokeStack = ({ position, style, color = "#7f1d1d" }: { position: [number, number, number], style: number, color?: string }) => (
     <group position={position}>
-      {style === 0 ? (
+      {style === 0 ? ( // Straight tall
           <mesh geometry={cylinderGeo} castShadow receiveShadow position={[0, 0.6, 0]} scale={[0.15, 1.2, 0.15]}>
-            <meshStandardMaterial color="#7f1d1d" roughness={0.9} />
+            <meshStandardMaterial color={color} roughness={0.9} />
           </mesh>
-      ) : style === 1 ? (
-          <mesh geometry={cylinderGeo} castShadow receiveShadow position={[0, 0.6, 0]} scale={[0.1, 1.4, 0.1]}>
-             <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.3} />
+      ) : style === 1 ? ( // Tapered conical
+          <mesh castShadow receiveShadow position={[0, 0.6, 0]} scale={[0.2, 1.2, 0.2]}>
+             <cylinderGeometry args={[0.5, 1, 1, 8]} />
+             <meshStandardMaterial color={color} metalness={0.6} roughness={0.3} />
           </mesh>
-      ) : (
+      ) : ( // Multiple thin pipes
           <group>
                <mesh geometry={cylinderGeo} position={[-0.1, 0.5, 0]} scale={[0.05, 1.0, 0.05]}>
                    <meshStandardMaterial color="#64748b" />
@@ -143,41 +144,22 @@ const SmokeStack = ({ position, style }: { position: [number, number, number], s
     </group>
 );
 
-const StorageTank = ({ position }: { position: [number, number, number] }) => (
+const StorageTank = ({ position, color = "#e2e8f0" }: { position: [number, number, number], color?: string }) => (
     <mesh geometry={cylinderGeo} castShadow receiveShadow position={position} scale={[0.3, 0.6, 0.3]}>
-        <meshStandardMaterial color="#e2e8f0" metalness={0.4} roughness={0.3} />
+        <meshStandardMaterial color={color} metalness={0.4} roughness={0.3} />
     </mesh>
 );
-
-const RoadMarkings = ({ type }: { type: BuildingType }) => {
-    if (type === BuildingType.Highway) {
-        return (
-            <group position={[0, 0.01, 0]}>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-0.05, 0, 0]}>
-                    <planeGeometry args={[0.05, 1]} />
-                    <meshStandardMaterial color="#eab308" />
-                </mesh>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.05, 0, 0]}>
-                    <planeGeometry args={[0.05, 1]} />
-                    <meshStandardMaterial color="#eab308" />
-                </mesh>
-            </group>
-        );
-    }
-    return (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-            <planeGeometry args={[0.1, 0.6]} />
-            <meshStandardMaterial color="#e2e8f0" />
-        </mesh>
-    );
-};
 
 const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type, baseColor, x, y, level = 1, opacity = 1, transparent = false, isNight = false }) => {
   const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
   const variant = Math.floor(hash * 100); 
   const rotation = Math.floor(hash * 4) * (Math.PI / 2);
-  const style = Math.floor(hash * 6); // More variety
+  const style = Math.floor(hash * 6); 
   
+  // Exponential growth for height based on level for a more dramatic city skyline
+  const heightMult = Math.pow(1.3, level - 1);
+  const detailFactor = level;
+
   const color = useMemo(() => {
     const c = new THREE.Color(baseColor);
     c.offsetHSL(hash * 0.1 - 0.05, 0, hash * 0.2 - 0.1);
@@ -195,68 +177,35 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
       {(() => {
         switch (type) {
           case BuildingType.Road:
-            return (
-                <group position={[0, -0.29, 0]}>
-                    <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
-                        <planeGeometry args={[1, 1]} />
-                        <meshStandardMaterial color="#475569" roughness={0.9} />
-                    </mesh>
-                    <RoadMarkings type={BuildingType.Road} />
-                    {variant % 20 === 0 && (
-                        <mesh position={[0.4, 0.2, 0]} scale={[0.1, 0.4, 0.1]}>
-                            <boxGeometry />
-                            <meshStandardMaterial color="#94a3b8" />
-                        </mesh>
-                    )}
-                </group>
-            );
-
           case BuildingType.Highway:
-            return (
-                <group position={[0, -0.28, 0]}>
-                    <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
-                        <planeGeometry args={[1, 1]} />
-                        <meshStandardMaterial color="#1e293b" roughness={0.9} />
-                    </mesh>
-                    <RoadMarkings type={BuildingType.Highway} />
-                </group>
-            );
+            return null; 
 
           case BuildingType.Residential:
             return (
                 <group>
-                  <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.3, 0]} scale={[0.7, 0.6, 0.6]} />
+                  <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.3 * heightMult, 0]} scale={[0.7, 0.6 * heightMult, 0.6]} />
                   
-                  {/* Varied Roofs */}
-                  {style === 0 && ( // Hipped Roof
-                    <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.75, 0]} scale={[0.65, 0.4, 0.65]} rotation={[0, Math.PI/4, 0]} />
-                  )}
-                  {style === 1 && ( // Gabled Roof
-                    <mesh {...commonProps} material={roofMat} geometry={prismGeo} position={[0, 0.7, 0]} scale={[0.55, 0.4, 0.65]} rotation={[0, 0, Math.PI/2]} />
-                  )}
-                  {style === 2 && ( // Flat Roof with AC
-                    <group position={[0, 0.6, 0]}>
-                        <mesh {...commonProps} material={roofMat} scale={[0.7, 0.05, 0.6]}>
-                            <boxGeometry />
-                        </mesh>
-                        <ACUnit position={[0.1, 0.1, 0.1]} />
+                  {/* Roof transforms with level: Pitched -> Flat -> Modern/Pointy */}
+                  {level < 3 ? (
+                    <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, (0.6 * heightMult) + 0.1, 0]} scale={[0.65, 0.4, 0.65]} rotation={[0, Math.PI/4, 0]} />
+                  ) : level < 5 ? (
+                    <mesh {...commonProps} material={roofMat} geometry={boxGeo} position={[0, (0.6 * heightMult) + 0.02, 0]} scale={[0.75, 0.05, 0.65]} />
+                  ) : (
+                    <group position={[0, (0.6 * heightMult) + 0.2, 0]}>
+                         <mesh {...commonProps} material={roofMat} geometry={cylinderGeo} scale={[0.1, 0.8, 0.1]} />
+                         <mesh material={new THREE.MeshStandardMaterial({color: '#fcd34d', emissive: '#fcd34d'})} geometry={sphereGeo} position={[0, 0.4, 0]} scale={0.05} />
                     </group>
                   )}
-                  {style >= 3 && ( // Steep A-Frame
-                    <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.8, 0]} scale={[0.55, 0.6, 0.55]} rotation={[0, Math.PI/4, 0]} />
-                  )}
+                  
+                  {/* Window density increases with level */}
+                  {Array.from({ length: level }).map((_, i) => (
+                    <group key={i} position={[0, (i / level) * 0.5 * heightMult + 0.1, 0]}>
+                        <WindowBlock isNight={isNight} position={[0.2, 0, 0.31]} scale={[0.15, 0.1, 0.05]} />
+                        <WindowBlock isNight={isNight} position={[-0.2, 0, 0.31]} scale={[0.15, 0.1, 0.05]} />
+                    </group>
+                  ))}
 
-                  {/* Varied Windows */}
-                  {variant % 2 === 0 ? (
-                    <>
-                        <WindowBlock isNight={isNight} position={[0.2, 0.35, 0.31]} scale={[0.12, 0.15, 0.05]} />
-                        <WindowBlock isNight={isNight} position={[-0.2, 0.35, 0.31]} scale={[0.12, 0.15, 0.05]} />
-                    </>
-                  ) : (
-                    <WindowBlock isNight={isNight} position={[0, 0.4, 0.31]} scale={[0.4, 0.15, 0.05]} />
-                  )}
-
-                  {/* Fence or Yard */}
+                  {level > 3 && <ACUnit position={[0.2, 0.6 * heightMult + 0.05, 0.2]} />}
                   {variant % 5 === 0 && <Fence position={[0, 0, 0]} />}
 
                   <mesh position={[0, 0.15, 0.31]} scale={[0.15, 0.3, 0.02]}>
@@ -269,70 +218,21 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
           case BuildingType.Commercial:
             return (
                 <group>
-                    <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.5, 0]} scale={[0.9, 1.0, 0.9]} />
+                    <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.4 * heightMult, 0]} scale={[0.9, 0.8 * heightMult, 0.9]} />
                     
-                    {style === 0 && ( // Modern Glass Front
-                        <>
-                             <WindowBlock isNight={isNight} position={[0, 0.5, 0.46]} scale={[0.8, 0.7, 0.05]} color="#93c5fd" />
-                             <mesh position={[0, 1.05, 0]} scale={[0.85, 0.1, 0.85]}>
-                                <boxGeometry />
-                                <meshStandardMaterial color="#334155" />
-                             </mesh>
-                             <ACUnit position={[0.2, 1.15, 0.2]} />
-                        </>
-                    )}
-
-                    {style === 1 && ( // Boutique with Spinning Billboard
-                        <>
-                             <WindowBlock isNight={isNight} position={[-0.2, 0.5, 0.46]} scale={[0.3, 0.4, 0.05]} />
-                             <mesh position={[0.2, 0.35, 0.46]} scale={[0.2, 0.5, 0.02]}>
-                                 <boxGeometry />
-                                 <meshStandardMaterial color="#78350f" />
-                             </mesh>
-                             <mesh position={[0, 0.7, 0.5]} rotation={[Math.PI/4, 0, 0]} scale={[0.9, 0.05, 0.3]}>
-                                 <boxGeometry />
-                                 <meshStandardMaterial color={variant % 2 === 0 ? "#ef4444" : "#10b981"} />
-                             </mesh>
-                             <Billboard position={[0, 1.5, 0]} animated={true} />
-                        </>
-                    )}
-
-                    {style === 2 && ( // Mixed use (2 story)
-                        <>
-                            <WindowBlock isNight={isNight} position={[0, 0.3, 0.46]} scale={[0.8, 0.4, 0.05]} />
-                            <WindowBlock isNight={isNight} position={[0.2, 0.8, 0.46]} scale={[0.2, 0.2, 0.05]} />
-                            <WindowBlock isNight={isNight} position={[-0.2, 0.8, 0.46]} scale={[0.2, 0.2, 0.05]} />
-                            <mesh position={[0, 1.1, 0]} scale={[0.5, 0.2, 0.05]} rotation={[0, 0, Math.PI/32]}>
-                                <boxGeometry />
-                                <meshStandardMaterial color="#fcd34d" />
-                            </mesh>
-                            <ACUnit position={[-0.2, 1.1, -0.2]} />
-                        </>
-                    )}
-
-                    {style === 3 && ( // Office (Tall)
-                        <>
-                             <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.8, 0]} scale={[0.8, 0.6, 0.8]} />
-                             <WindowBlock isNight={isNight} position={[0, 0.5, 0.46]} scale={[0.15, 0.8, 0.05]} />
-                             <WindowBlock isNight={isNight} position={[0.25, 0.5, 0.46]} scale={[0.15, 0.8, 0.05]} />
-                             <WindowBlock isNight={isNight} position={[-0.25, 0.5, 0.46]} scale={[0.15, 0.8, 0.05]} />
-                             <Skylight position={[0, 1.15, 0]} />
-                        </>
-                    )}
-
-                    {style === 4 && ( // Restaurant with Awning
-                        <>
-                             <WindowBlock isNight={isNight} position={[0, 0.3, 0.46]} scale={[0.8, 0.4, 0.05]} />
-                             {/* Awning */}
-                             <mesh position={[0, 0.6, 0.6]} rotation={[0.4, 0, 0]} scale={[0.9, 0.05, 0.4]}>
-                                 <boxGeometry />
-                                 <meshStandardMaterial color="#ef4444" />
-                             </mesh>
-                             <mesh position={[0, 0.61, 0.6]} rotation={[0.4, 0, 0]} scale={[0.92, 0.05, 0.41]}>
-                                  <boxGeometry />
-                                  <meshStandardMaterial color="#ffffff" wireframe /> 
-                             </mesh>
-                        </>
+                    {/* Glass facade for modern commercial buildings */}
+                    <WindowBlock isNight={isNight} position={[0, 0.4 * heightMult, 0.46]} scale={[0.8, 0.7 * heightMult, 0.05]} color={level > 3 ? "#93c5fd" : "#bfdbfe"} />
+                    
+                    {level > 1 && <Billboard position={[0, 0.8 * heightMult + 0.2, 0]} color={variant % 2 === 0 ? "#f43f5e" : "#8b5cf6"} animated={level > 3} />}
+                    {level > 2 && <ACUnit position={[0.3, 0.8 * heightMult + 0.05, 0.3]} />}
+                    {level > 4 && <Skylight position={[0, 0.8 * heightMult + 0.05, 0]} />}
+                    
+                    {/* Add base detail for luxury shops */}
+                    {level >= 4 && (
+                        <mesh position={[0, 0.1, 0.5]} scale={[0.95, 0.2, 0.1]}>
+                            <boxGeometry />
+                            <meshStandardMaterial color="#334155" />
+                        </mesh>
                     )}
                 </group>
             );
@@ -340,53 +240,20 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
           case BuildingType.Industrial:
               return (
                 <group>
-                  <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.4, 0]} scale={[0.9, 0.8, 0.9]} />
+                  <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.35 * heightMult, 0]} scale={[0.9, 0.7 * heightMult, 0.9]} />
+                  <SmokeStack position={[0.3, 0.7 * heightMult, 0.3]} style={level % 3} color={level > 3 ? "#451a03" : "#7f1d1d"} />
                   
-                  {style === 0 && ( // SmokeStack
-                      <SmokeStack position={[0.3, 0.4, 0.3]} style={0} />
+                  {level > 2 && <SmokeStack position={[-0.3, 0.7 * heightMult, -0.3]} style={(level + 1) % 3} color="#451a03" />}
+                  {level > 3 && <StorageTank position={[0.25, 0.3, -0.2]} color="#94a3b8" />}
+                  {level > 4 && (
+                      <group position={[0, 0.7 * heightMult, 0]}>
+                           <mesh position={[0, 0.1, 0]} scale={[0.4, 0.2, 0.4]}>
+                               <cylinderGeometry />
+                               <meshStandardMaterial color="#64748b" />
+                           </mesh>
+                           <AnimatedSmoke position={[0, 0.3, 0]} color="#94a3b8" />
+                      </group>
                   )}
-
-                  {style === 1 && ( // Tanks
-                      <>
-                        <StorageTank position={[-0.2, 0.3, -0.2]} />
-                        <StorageTank position={[0.2, 0.3, 0.2]} />
-                        <mesh position={[0, 0.5, 0]} rotation={[0, 0, Math.PI/2]} scale={[0.05, 0.6, 0.05]}>
-                            <cylinderGeometry />
-                            <meshStandardMaterial color="#64748b" />
-                        </mesh>
-                      </>
-                  )}
-
-                  {style === 2 && ( // Warehouse
-                      <>
-                        <mesh {...commonProps} material={roofMat} geometry={prismGeo} position={[0, 0.8, 0]} scale={[0.65, 0.3, 0.9]} rotation={[0, 0, Math.PI/2]} />
-                         <ACUnit position={[0.2, 0.9, 0]} />
-                         <ACUnit position={[-0.2, 0.9, 0]} />
-                      </>
-                  )}
-
-                  {style === 3 && ( // Processing Plant
-                      <>
-                         <SmokeStack position={[-0.3, 0.4, -0.3]} style={2} />
-                         <mesh position={[0, 0.6, 0.46]} scale={[0.8, 0.1, 0.1]}>
-                             <boxGeometry />
-                             <meshStandardMaterial color="#64748b" />
-                         </mesh>
-                         <WindowBlock isNight={isNight} position={[0, 0.3, 0.46]} scale={[0.4, 0.2, 0.05]} color="#475569" />
-                      </>
-                  )}
-
-                  {style === 4 && ( // Tech Factory
-                       <>
-                          <Skylight position={[0, 0.81, 0]} />
-                          <mesh position={[0.3, 0.4, 0.46]} scale={[0.2, 0.6, 0.05]}>
-                               <boxGeometry />
-                               <meshStandardMaterial color="#3b82f6" emissive="#3b82f6" emissiveIntensity={0.5} />
-                          </mesh>
-                       </>
-                  )}
-                  
-                  {style !== 3 && <WindowBlock isNight={isNight} position={[0, 0.5, 0.46]} scale={[0.2, 0.2, 0.05]} color="#475569" />}
                 </group>
               );
 
@@ -397,45 +264,40 @@ const ProceduralBuilding: React.FC<ProceduralBuildingProps> = React.memo(({ type
                     <planeGeometry args={[0.9, 0.9]} />
                     <meshStandardMaterial color="#4ade80" />
                 </mesh>
-                {variant % 2 === 0 ? (
-                    <group>
-                        <mesh position={[0, 0.1, 0]} scale={[0.8, 0.2, 0.8]}>
-                            <cylinderGeometry />
-                            <meshStandardMaterial color="#e2e8f0" />
-                        </mesh>
-                        <mesh position={[0, 0.4, 0]} scale={[0.2, 0.6, 0.2]}>
-                             <cylinderGeometry />
-                             <meshStandardMaterial color="#60a5fa" transparent opacity={0.8} />
-                        </mesh>
-                    </group>
-                ) : (
-                    <mesh castShadow receiveShadow material={new THREE.MeshStandardMaterial({ color: '#166534' })} geometry={coneGeo} position={[0, 0.4, 0]} scale={[0.4, 0.5, 0.4]} />
-                )}
+                <group scale={1 + (level - 1) * 0.3}>
+                    {variant % 2 === 0 ? (
+                        <group>
+                            <mesh position={[0, 0.1, 0]} scale={[0.8, 0.2, 0.8]}>
+                                <cylinderGeometry />
+                                <meshStandardMaterial color="#e2e8f0" />
+                            </mesh>
+                            <mesh position={[0, 0.4, 0]} scale={[0.2, 0.6, 0.2]}>
+                                 <cylinderGeometry />
+                                 <meshStandardMaterial color="#60a5fa" transparent opacity={0.8} />
+                            </mesh>
+                        </group>
+                    ) : (
+                        <group>
+                            <mesh castShadow receiveShadow material={new THREE.MeshStandardMaterial({ color: '#166534' })} geometry={coneGeo} position={[0, 0.4, 0]} scale={[0.4, 0.5, 0.4]} />
+                            {level > 3 && (
+                                <>
+                                    <mesh position={[0.2, 0.2, 0.2]} scale={0.2} geometry={sphereGeo}><meshStandardMaterial color="#f87171" /></mesh>
+                                    <mesh position={[-0.2, 0.2, -0.2]} scale={0.2} geometry={sphereGeo}><meshStandardMaterial color="#f87171" /></mesh>
+                                </>
+                            )}
+                        </group>
+                    )}
+                </group>
               </group>
             );
 
-          case BuildingType.Police:
-             return (
-                 <group>
-                     <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.4, 0]} scale={[0.8, 0.8, 0.8]} />
-                     <mesh {...commonProps} material={new THREE.MeshStandardMaterial({color: '#1e3a8a'})} geometry={boxGeo} position={[0, 0.85, 0]} scale={[0.6, 0.1, 0.6]} />
-                     <mesh material={new THREE.MeshStandardMaterial({color: '#ef4444', emissive: '#ef4444', emissiveIntensity: 2})} geometry={sphereGeo} position={[0.2, 0.95, 0]} scale={0.15} />
-                     <mesh material={new THREE.MeshStandardMaterial({color: '#3b82f6', emissive: '#3b82f6', emissiveIntensity: 2})} geometry={sphereGeo} position={[-0.2, 0.95, 0]} scale={0.15} />
-                 </group>
-             );
-
-          case BuildingType.School:
-              return (
-                  <group>
-                      <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.3, 0]} scale={[0.9, 0.6, 0.7]} />
-                      <mesh {...commonProps} material={roofMat} geometry={coneGeo} position={[0, 0.8, 0]} scale={[0.3, 0.4, 0.3]} />
-                      <mesh {...commonProps} material={new THREE.MeshStandardMaterial({color: '#facc15'})} geometry={cylinderGeo} position={[0, 1.0, 0]} scale={[0.05, 0.2, 0.05]} />
-                      <mesh {...commonProps} material={new THREE.MeshStandardMaterial({color: '#ef4444'})} geometry={boxGeo} position={[0, 1.15, 0]} scale={[0.2, 0.1, 0.05]} />
-                  </group>
-              );
-
           default:
-            return null;
+            return (
+                <group>
+                     <mesh {...commonProps} material={mainMat} geometry={boxGeo} position={[0, 0.4 * heightMult, 0]} scale={[0.8, 0.8 * heightMult, 0.8]} />
+                     {level > 2 && <WindowBlock isNight={isNight} position={[0, 0.5 * heightMult, 0.41]} scale={[0.6, 0.4, 0.05]} />}
+                </group>
+            );
         }
       })()}
     </group>
